@@ -4,6 +4,7 @@
 #include <mutex>
 #include <vector>
 #include <memory>
+#include <thread>
 #include "base/noncopyable.h"
 #include "base/TimeStamp.h"
 #include "base/TimerId.h"
@@ -62,7 +63,7 @@ private:
 
     std::atomic_bool looping_;
     std::atomic_bool quit_;
-    const pid_t threadId_;
+    const std::thread::id threadId_;
 
     std::unique_ptr<Epoller> poller_;
     std::unique_ptr<TimerQueue> timerQueue_;
