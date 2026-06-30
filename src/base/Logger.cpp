@@ -32,14 +32,14 @@ const char* Logger::levelStr(LogLevel level) {
 void Logger::log(LogLevel level, const char* file, int line, const char* fmt, ...) {
     if (level < level_) return;
 
-    // 格式化用户消息
+    // Format user message
     char msgBuf[4096];
     va_list args;
     va_start(args, fmt);
     vsnprintf(msgBuf, sizeof(msgBuf), fmt, args);
     va_end(args);
 
-    // 格式化完整日志行
+    // Format complete log line
     time_t now = time(nullptr);
     struct tm tm_buf;
     localtime_r(&now, &tm_buf);
@@ -57,7 +57,7 @@ void Logger::log(LogLevel level, const char* file, int line, const char* fmt, ..
         // Async mode: write to buffer
         AsyncLogger::instance().append(lineBuf, len);
     } else {
-        // 同步模式：直接写stderr
+        // Sync mode: write directly to stderr
         std::lock_guard<std::mutex> lock(mtx_);
         fwrite(lineBuf, 1, len, stderr);
         fflush(stderr);
@@ -65,7 +65,7 @@ void Logger::log(LogLevel level, const char* file, int line, const char* fmt, ..
 
     if (level == LogLevel::FATAL) {
         if (asyncMode_) {
-            AsyncLogger::instance().stop();  // 确保日志刷出
+            AsyncLogger::instance().stop();  // Ensure log is flushed
         }
         abort();
     }

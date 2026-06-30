@@ -57,13 +57,13 @@ void TcpServer::newConnection(int fd, const InetAddress& peerAddr) {
     snprintf(buf, sizeof(buf), "-%d", connCount_++);
     std::string connName = name_ + buf;
 
-    // 获取本端地址
+    // Get local address
     struct sockaddr_in localAddr;
     socklen_t len = sizeof(localAddr);
     ::getsockname(fd, reinterpret_cast<sockaddr*>(&localAddr), &len);
     InetAddress local(localAddr);
 
-    // Round-Robin选择IO线程
+    // Round-Robin select IO thread
     EventLoop* ioLoop = threadPool_->getNextLoop();
 
     auto conn = std::make_shared<TcpConnection>(ioLoop, connName, fd, local, peerAddr);
@@ -75,7 +75,7 @@ void TcpServer::newConnection(int fd, const InetAddress& peerAddr) {
         removeConnection(c);
     });
 
-    // 在IO线程中完成连接建立
+    // Complete connection establishment in IO thread
     ioLoop->runInLoop([conn]() { conn->connectEstablished(); });
 
     LOG_INFO("New connection [%s] from %s -> loop %p (total: %zu)",
@@ -84,7 +84,7 @@ void TcpServer::newConnection(int fd, const InetAddress& peerAddr) {
 }
 
 void TcpServer::removeConnection(const std::shared_ptr<TcpConnection>& conn) {
-    // 线程安全：所有connections_操作必须在主EventLoop线程中执行
+    // Thread-safe: all connections_ ops must run in main EventLoop thread
     loop_->runInLoop([this, conn]() { removeConnectionInLoop(conn); });
 }
 
@@ -93,12 +93,12 @@ void TcpServer::removeConnectionInLoop(const std::shared_ptr<TcpConnection>& con
     size_t n = connections_.erase(conn->name());
     (void)n;
 
-    // 在连接所属IO线程中安全销毁
+    // Safely destroy in connection's owning IO thread
     EventLoop* ioLoop = conn->getLoop();
     ioLoop->queueInLoop([conn]() { conn->connectDestroyed(); });
 }
 
-// ─── 优雅关闭 ───
+// ─── Graceful Close ───
 
 void TcpServer::stopAccepting() {
     loop_->runInLoop([this]() {

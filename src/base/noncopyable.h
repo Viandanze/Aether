@@ -1,5 +1,5 @@
 #pragma once
-// Base class for non-copyable, similar to muduo's noncopyable
+// Non-copyable base class, similar to muduo's noncopyable
 class noncopyable {
 public:
     noncopyable() = default;

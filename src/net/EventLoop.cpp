@@ -122,7 +122,7 @@ bool EventLoop::isInLoopThread() const {
     return threadId_ == std::this_thread::get_id();
 }
 
-// ─── 定时器接口 ───
+// ─── Timer interface ───
 
 TimerId EventLoop::runAt(TimeStamp time, Timer::TimerCallback cb) {
     return timerQueue_->addTimer(std::move(cb), time, 0.0);

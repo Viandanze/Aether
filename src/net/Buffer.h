@@ -9,19 +9,19 @@
 #include <errno.h>
 #include <arpa/inet.h>
 
-/// Buffer：自动增长的字节缓冲区
+/// Buffer: auto-growing byte buffer
 ///
-/// 内存布局：
+/// Memory layout:
 /// +-------------------+------------------+------------------+
 /// | prependable bytes |  readable bytes  |  writable bytes  |
 /// |                   |     (CONTENT)    |                  |
 /// +-------------------+------------------+------------------+
 /// 0      <=      readerIndex   <=   writerIndex    <=     size
 ///
-/// 设计参考 muduo::net::Buffer：
-/// - readv + 栈上extrabuf，一次系统调用读尽可能多的数据
-/// - 内部自动增长，空闲时可通过shrink()回收
-/// - 支持prepend，用于协议头前置
+/// Design inspired by muduo::net::Buffer:
+/// - readv + stack extrabuf, maximize data per syscall
+/// - Auto-grow internally, reclaimable via shrink() when idle
+/// - Support prepend for protocol header prepending
 class Buffer {
 public:
     static const size_t kCheapPrepend = 8;
@@ -39,13 +39,13 @@ public:
         std::swap(writerIndex_, rhs.writerIndex_);
     }
 
-    // ─── 容量查询 ───
+    // ─── Capacity queries ───
     size_t readableBytes()  const { return writerIndex_ - readerIndex_; }
     size_t writableBytes()  const { return buffer_.size() - writerIndex_; }
     size_t prependableBytes() const { return readerIndex_; }
     size_t internalCapacity() const { return buffer_.capacity(); }
 
-    // ─── 读端 ───
+    // ─── Read end ───
     const char* peek() const { return begin() + readerIndex_; }
     char* peek() { return begin() + readerIndex_; }
 
@@ -92,7 +92,7 @@ public:
         return retrieveAsString(readableBytes());
     }
 
-    // ─── 写端 ───
+    // ─── Write end ───
     void append(const char* data, size_t len) {
         ensureWritableBytes(len);
         std::copy(data, data + len, beginWrite());
@@ -127,7 +127,7 @@ public:
         writerIndex_ -= len;
     }
 
-    // ─── 前置写入 ───
+    // ─── Prepend ───
     void prepend(const void* data, size_t len) {
         assert(len <= prependableBytes());
         readerIndex_ -= len;
@@ -140,9 +140,9 @@ public:
         prepend(&be32, sizeof(be32));
     }
 
-    // ─── 从fd读取数据（readv + 栈上extrabuf）───
+    // ─── Read data from fd (readv + stack extrabuf)───
     ssize_t readFd(int fd, int* savedErrno) {
-        // 栈上缓冲：当Buffer可写空间不足时，先用extrabuf接收溢出数据
+        // Stack buffer: use extrabuf for overflow when writable space is insufficient
         char extrabuf[65536];
         struct iovec vec[2];
         const size_t writable = writableBytes();
@@ -159,10 +159,10 @@ public:
         if (n < 0) {
             *savedErrno = errno;
         } else if (static_cast<size_t>(n) <= writable) {
-            // 数据全部落在Buffer可写区域
+            // All data falls in Buffer writable area
             writerIndex_ += n;
         } else {
-            // Buffer可写区域不够，extrabuf也接收了数据
+            // Buffer writable area insufficient, extrabuf also received data
             writerIndex_ = buffer_.size();
             append(extrabuf, static_cast<size_t>(n) - writable);
         }
@@ -170,7 +170,7 @@ public:
         return n;
     }
 
-    // ─── Shrink buffer ───
+    // ─── Shrink idle space ───
     void shrink(size_t reserve = 0) {
         Buffer other;
         other.ensureWritableBytes(readableBytes() + reserve);
@@ -184,10 +184,10 @@ private:
 
     void makeSpace(size_t len) {
         if (writableBytes() + prependableBytes() < len + kCheapPrepend) {
-            // 整体空间不够，扩容
+            // Overall space insufficient, grow
             buffer_.resize(writerIndex_ + len);
         } else {
-            // 整体空间够，把可读数据前移
+            // Overall space sufficient, shift readable data forward
             size_t readable = readableBytes();
             std::copy(begin() + readerIndex_,
                       begin() + writerIndex_,

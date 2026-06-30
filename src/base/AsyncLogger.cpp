@@ -35,7 +35,7 @@ AsyncLogger::~AsyncLogger() {
 
 void AsyncLogger::start() {
     running_ = true;
-    rollFile();  // 启动时创建日志文件
+    rollFile();  // Create log file on startup
     thread_ = std::thread([this]() { threadFunc(); });
 }
 
@@ -86,7 +86,7 @@ void AsyncLogger::threadFunc() {
             }
         }
 
-        // 检查是否跨天
+        // Check if day rolled over
         time_t now = time(nullptr);
         struct tm tm_now;
         localtime_r(&now, &tm_now);
@@ -99,20 +99,20 @@ void AsyncLogger::threadFunc() {
             rollFile();
         }
 
-        // 写入文件（不需要持锁）
+        // Write to file (no lock needed)
         for (auto& buf : buffersToWrite_) {
             fileStream_.write(buf->data(), buf->length());
             writtenBytes_ += buf->length();
         }
 
-        // 检查是否需要按大小滚动
+        // Check if size-based rotation needed
         if (writtenBytes_ >= rollSize_) {
             rollFile();
         }
 
         fileStream_.flush();
 
-        // 回收缓冲区（复用）
+        // Recycle buffers (reuse)
         if (buffersToWrite_.size() > 1) {
             buffersToWrite_.erase(buffersToWrite_.begin() + 1, buffersToWrite_.end());
         }
@@ -123,7 +123,7 @@ void AsyncLogger::threadFunc() {
         buffersToWrite_.clear();
     }
 
-    // 退出前flush
+    // Flush before exit
     if (fileStream_.is_open()) {
         fileStream_.flush();
         fileStream_.close();
@@ -134,7 +134,7 @@ std::string AsyncLogger::getLogFileName(const struct tm& tm_now) {
     char timeStr[32];
     strftime(timeStr, sizeof(timeStr), "%Y%m%d-%H%M%S", &tm_now);
 
-    // 格式：basename.20260622-180530.pid12345.log
+    // Format: basename.20260622-180530.pid12345.log
     return logFile_ + "." + timeStr + ".pid" + std::to_string(::getpid()) + ".log";
 }
 
@@ -156,7 +156,7 @@ void AsyncLogger::rollFile() {
     writtenBytes_ = 0;
     lastDay_ = tm_now.tm_mday;
 
-    // 清理旧日志文件
+    // Clean old log files
     cleanOldFiles();
 }
 
@@ -164,7 +164,7 @@ void AsyncLogger::cleanOldFiles() {
     if (keepFiles_ <= 0) return;  // 0=don't clean
 
     try {
-        // 收集所有匹配的日志文件
+        // Collect all matching log files
         fs::path dir = fs::path(logFile_).parent_path();
         if (dir.empty()) dir = ".";
 
@@ -174,20 +174,20 @@ void AsyncLogger::cleanOldFiles() {
         for (const auto& entry : fs::directory_iterator(dir)) {
             if (entry.is_regular_file()) {
                 std::string name = entry.path().filename().string();
-                // 匹配 basename.*.pid*.log
+                // Match basename.*.pid*.log
                 if (name.find(baseName) == 0 && name.size() > baseName.size()) {
                     logFiles.push_back(entry.path());
                 }
             }
         }
 
-        // 按修改时间排序（旧的在前）
+        // Sort by modification time (oldest first)
         std::sort(logFiles.begin(), logFiles.end(),
             [](const fs::path& a, const fs::path& b) {
                 return fs::last_write_time(a) < fs::last_write_time(b);
             });
 
-        // 保留最新的keepFiles_个，删除其余
+        // Keep newest keepFiles_ files, delete the rest
         if (static_cast<int>(logFiles.size()) > keepFiles_) {
             int toDelete = static_cast<int>(logFiles.size()) - keepFiles_;
             for (int i = 0; i < toDelete; ++i) {

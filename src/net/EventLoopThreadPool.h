@@ -8,10 +8,10 @@
 class EventLoop;
 class EventLoopThread;
 
-// EventLoopThreadPool：主从Reactor的子Reactor线程池
-// mainReactor(Acceptor)接收新连接 → round-robin分发给subReactor(IO线程)
-// setThreadNum(0) = 单Reactor模式（主线程处理所有IO）
-// setThreadNum(N) = 1主N从模式
+// EventLoopThreadPool: sub-Reactor thread pool for master-slave Reactor
+// mainReactor(Acceptor) accepts new connections -> round-robin to subReactor(IO threads)
+// setThreadNum(0) = single Reactor mode (main thread handles all IO)
+// setThreadNum(N) = 1 master + N slaves mode
 class EventLoopThreadPool : noncopyable {
 public:
     using ThreadInitCallback = std::function<void(EventLoop*)>;
@@ -24,23 +24,23 @@ public:
 
     void start(const ThreadInitCallback& cb = ThreadInitCallback());
 
-    // Round-Robin获取下一个EventLoop（线程安全）
-    // 如果线程池未启动，返回baseLoop（单Reactor模式）
+    // Round-Robin get next EventLoop (thread-safe)
+    // If pool not started, return baseLoop (single Reactor mode)
     EventLoop* getNextLoop();
 
-    // 获取所有EventLoop（用于定时器等需要遍历的场景）
+    // Get all EventLoops (for timers and other traversal needs)
     std::vector<EventLoop*> getAllLoops();
 
     bool started() const { return started_; }
     const std::string& name() const { return name_; }
 
 private:
-    EventLoop* baseLoop_;  // 主Reactor的EventLoop（TcpServer所在线程）
+    EventLoop* baseLoop_;  // Main Reactor's EventLoop (thread where TcpServer lives)
     std::string name_;
     bool started_;
     int numThreads_;
 
-    std::atomic_int next_;  // Round-Robin索引
+    std::atomic_int next_;  // Round-Robin index
 
     std::vector<std::unique_ptr<EventLoopThread>> threads_;
     std::vector<EventLoop*> loops_;  // Raw pointers to all sub-EventLoops

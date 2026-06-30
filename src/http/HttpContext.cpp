@@ -22,7 +22,7 @@ bool HttpContext::parseRequest(Buffer* buf) {
                                            kCRLF, kCRLF + 2);
 
             if (crlf == nullptr) {
-                break;  // 不完整行，等待更多数据
+                break;  // Incomplete line, wait for more data
             }
 
             size_t lineLen = static_cast<size_t>(crlf - (bufData + pos));
@@ -194,8 +194,8 @@ bool HttpContext::processRequestLine(std::string_view line) {
 }
 
 bool HttpContext::processChunkSize(std::string_view line) {
-    // "1a\r\n" 或 "0\r\n"
-    // chunk-size可能带扩展，用分号分隔，只取数字部分
+    // "1a\r\n" or "0\r\n"
+    // chunk-size may have semicolon-separated extensions, only take numeric part
     auto semi = std::find(line.begin(), line.end(), ';');
     std::string_view sizeStr = (semi != line.end())
         ? std::string_view(line.begin(), semi)

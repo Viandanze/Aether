@@ -10,28 +10,28 @@
 #include <fstream>
 #include <sys/stat.h>
 
-// ─── Global variables (for signal handling) ───
+// ─── Global variables (for signal handling)───
 EventLoop* g_loop = nullptr;
 HttpServer* g_server = nullptr;
 
-// ─── 信号处理：优雅关闭 ───
+// ─── Signal handling: graceful Close ───
 void installSignalHandlers() {
-    ::signal(SIGPIPE, SIG_IGN);  // 忽略SIGPIPE（写已关闭的socket）
+    ::signal(SIGPIPE, SIG_IGN);  // Ignore SIGPIPE (writing to closed socket)
 
-    // SIGINT/SIGTERM：优雅关闭
+    // SIGINT/SIGTERM: graceful Close
     auto handler = [](int sig) {
         LOG_INFO("Received signal %d, starting graceful shutdown...", sig);
         if (g_server && g_loop) {
-            // 停止接受新连接
+            // Stop accepting new connections
             g_server->getTcpServer()->stopAccepting();
 
-            // 如果没有活跃连接，立即退出
+            // If no active connections, quit immediately
             if (g_server->getTcpServer()->connectionCount() == 0) {
                 g_loop->queueInLoop([]() { g_loop->quit(); });
                 return;
             }
 
-            // 等待5秒让连接处理完毕
+            // Wait 5 seconds to let connections finish
             g_loop->runAfter(5.0, []() {
                 int remaining = g_server->getTcpServer()->connectionCount();
                 if (remaining > 0) {
@@ -49,7 +49,7 @@ void installSignalHandlers() {
     ::signal(SIGTERM, handler);
 }
 
-// ─── MIME类型检测 ───
+// ─── MIME type detection ───
 std::string getMimeType(const std::string& path) {
     auto dot = path.rfind('.');
     if (dot == std::string::npos) return "application/octet-stream";
@@ -72,16 +72,16 @@ std::string getMimeType(const std::string& path) {
     return "application/octet-stream";
 }
 
-// ─── 路径安全检查 ───
+// ─── Path safety check ───
 bool isPathSafe(const std::string& path) {
-    // 阻止路径遍历攻击
+    // Block path traversal attacks
     if (path.find("..") != std::string::npos) return false;
     return true;
 }
 
-// ─── HTTP请求处理 ───
+// ─── HTTP request handling ───
 void onRequest(const HttpRequest& req, HttpResponse* resp) {
-    // 仅支持GET/HEAD/POST
+    // Only support GET/HEAD/POST
     auto method = req.method();
     if (method != HttpRequest::kGet &&
         method != HttpRequest::kHead &&
@@ -92,7 +92,7 @@ void onRequest(const HttpRequest& req, HttpResponse* resp) {
 
     const std::string& path = req.path();
 
-    // 内置API
+    // Built-in API
     if (path == "/api/status") {
         resp->setStatusCode(HttpResponse::k200Ok);
         resp->setStatusMessage("OK");
@@ -111,7 +111,7 @@ void onRequest(const HttpRequest& req, HttpResponse* resp) {
         return;
     }
 
-    // 静态文件服务（GET/HEAD）
+    // Static file serving (GET/HEAD)
     if (!isPathSafe(path)) {
         *resp = HttpResponse::forbidden();
         return;
@@ -126,7 +126,7 @@ void onRequest(const HttpRequest& req, HttpResponse* resp) {
         return;
     }
 
-    // 读取文件
+    // Read file
     std::ifstream file(filePath, std::ios::binary);
     if (!file.is_open()) {
         *resp = HttpResponse::notFound();
@@ -142,7 +142,7 @@ void onRequest(const HttpRequest& req, HttpResponse* resp) {
     if (method == HttpRequest::kGet) {
         resp->setBody(std::move(body));
     }
-    // HEAD请求：只返回头，不发body
+    // HEAD request: return headers only, no body
 }
 
 int main(int argc, char* argv[]) {
@@ -186,7 +186,7 @@ int main(int argc, char* argv[]) {
             printf("  -h             Show this help\n");
             return 0;
         } else {
-            // 兼容旧版位置参数
+            // Compatible with legacy positional args
             static int posArg = 0;
             switch (posArg) {
                 case 0: port = static_cast<uint16_t>(atoi(argv[i])); break;
@@ -197,7 +197,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ─── 启用异步日志 ───
+    // ─── Enable async logging ───
     if (asyncLog) {
         Logger::instance().enableAsync();
     }
@@ -212,7 +212,7 @@ int main(int argc, char* argv[]) {
     LOG_INFO("  Async logging: %s", asyncLog ? "ON" : "OFF");
     LOG_INFO("════════════════════════════════════════════════");
 
-    // ─── 创建服务器 ───
+    // ─── Create server ───
     EventLoop loop;
     g_loop = &loop;
     installSignalHandlers();

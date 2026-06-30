@@ -14,22 +14,22 @@ class Channel;
 // 
 // Design points:
 // 1. Use timerfd to integrate timer events into epoll event loop
-// 2. Use std::set to manage timers, sorted by expiration time
-// 3. Only set timerfd to the earliest expiration time
+// 2. Use std::set to manage timers, sorted by expiration
+// 3. Only set timerfd to earliest expiration
 // 4. Support one-shot and repeating timers
 class TimerQueue : noncopyable {
 public:
     explicit TimerQueue(EventLoop* loop);
     ~TimerQueue();
 
-    // 在指定时间执行回调（一次性）
+    // Schedule callback at specified time (one-shot)
     TimerId addTimer(Timer::TimerCallback cb, TimeStamp when, double interval = 0.0);
 
-    // 取消定时器
+    // Cancel timer
     void cancel(TimerId timerId);
 
 private:
-    // 用pair<TimeStamp, Timer*>作为set的key，保证唯一性
+    // Use pair<TimeStamp, Timer*> as set key for uniqueness
     using Entry = std::pair<TimeStamp, Timer*>;
     using TimerList = std::set<Entry>;
     using ActiveTimer = std::pair<Timer*, int64_t>;  // Timer* + sequence
@@ -38,13 +38,13 @@ private:
     void addTimerInLoop(Timer* timer);
     void cancelInLoop(TimerId timerId);
 
-    // timerfd可读回调
+    // timerfd readable callback
     void handleRead();
 
-    // 获取所有已过期的定时器
+    // Get all expired timers
     std::vector<Entry> getExpired(TimeStamp now);
 
-    // 重置重复定时器，并更新timerfd
+    // Reset repeating timers and update timerfd
     void reset(const std::vector<Entry>& expired, TimeStamp now);
 
     bool insert(Timer* timer);
@@ -59,5 +59,5 @@ private:
     // Active timer set for cancel
     ActiveTimerSet activeTimers_;
     bool callingExpiredTimers_;
-    ActiveTimerSet cancelingTimers_;  // 正在执行中的待取消列表
+    ActiveTimerSet cancelingTimers_;  // Pending cancel list for timers being executed
 };

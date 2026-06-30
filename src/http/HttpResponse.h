@@ -3,8 +3,8 @@
 #include <unordered_map>
 #include <functional>
 
-// HttpResponse：构建HTTP响应
-// 支持状态码设置、头部添加、body设置、Keep-Alive控制
+// HttpResponse: build HTTP response
+// Supports status code, headers, body, Keep-Alive control
 class HttpResponse {
 public:
     enum HttpStatusCode {
@@ -51,7 +51,7 @@ public:
     // Serialize response to string (for send)
     std::string serialize() const;
 
-    // 快捷构建
+    // Quick builders
     static HttpResponse ok(const std::string& body, const std::string& contentType = "text/html");
     static HttpResponse notFound(const std::string& body = "");
     static HttpResponse badRequest(const std::string& body = "");

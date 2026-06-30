@@ -7,8 +7,8 @@
 
 class EventLoop;
 
-// EventLoopThread：封装一个IO线程 + 其拥有的EventLoop
-// 启动线程后等待EventLoop创建完成再返回，确保线程安全
+// EventLoopThread: wraps an IO thread + its owned EventLoop
+// Waits for EventLoop creation before returning, ensuring thread safety
 class EventLoopThread : noncopyable {
 public:
     using ThreadInitCallback = std::function<void(EventLoop*)>;
@@ -17,10 +17,10 @@ public:
                     const std::string& name = std::string());
     ~EventLoopThread();
 
-    EventLoop* startLoop();  // 启动线程并返回其EventLoop
+    EventLoop* startLoop();  // Start thread and return its EventLoop
 
 private:
-    void threadFunc();  // 线程入口函数
+    void threadFunc();  // Thread entry function
 
     EventLoop* loop_;  // EventLoop created by thread (raw pointer, lifecycle managed by thread)
     bool exiting_;
@@ -28,5 +28,5 @@ private:
     std::thread thread_;
     std::mutex mtx_;
     std::condition_variable cond_;
-    ThreadInitCallback callback_;  // 线程初始化回调
+    ThreadInitCallback callback_;  // Thread initialization callback
 };

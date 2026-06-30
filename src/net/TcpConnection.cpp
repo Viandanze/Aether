@@ -40,7 +40,7 @@ void TcpConnection::connectDestroyed() {
     channel_->remove();
 }
 
-// ─── 发送 ───
+// ─── Send ───
 
 void TcpConnection::send(const std::string& message) {
     if (state_ == kConnected) {
@@ -78,7 +78,7 @@ void TcpConnection::sendInLoop(const char* data, size_t len) {
     ssize_t nwrote = 0;
     size_t remaining = len;
 
-    // 如果输出缓冲区为空且没有在监听写事件，尝试直接写
+    // If output buffer empty and not watching write events, try direct write
     if (!channel_->isWriting() && outputBuf_.readableBytes() == 0) {
         nwrote = ::write(channel_->fd(), data, len);
         if (nwrote >= 0) {
@@ -94,9 +94,9 @@ void TcpConnection::sendInLoop(const char* data, size_t len) {
         }
     }
 
-    // 写不完的放入outputBuf_，等fd可写时继续发
+    // Put unwritten data in outputBuf_, continue when fd is writable
     if (remaining > 0) {
-        // 高水位标记检查
+        // High water mark check
         size_t oldLen = outputBuf_.readableBytes();
         if (oldLen + remaining >= highWaterMark_
             && oldLen < highWaterMark_
@@ -113,7 +113,7 @@ void TcpConnection::sendInLoop(const char* data, size_t len) {
     }
 }
 
-// ─── 关闭 ───
+// ─── Close ───
 
 void TcpConnection::shutdown() {
     if (state_ == kConnected) {
@@ -153,7 +153,7 @@ void TcpConnection::setTcpNoDelay(bool on) {
     socket_->setTcpNoDelay(on);
 }
 
-// ─── 事件处理 ───
+// ─── Event handlers ───
 
 void TcpConnection::handleRead() {
     // ET mode must loop read until EAGAIN
@@ -175,7 +175,7 @@ void TcpConnection::handleRead() {
             LOG_ERROR("TcpConnection::handleRead error: %s", strerror(savedErrno));
             handleError();
         }
-        // EAGAIN是ET模式正常退出条件，不报错
+        // EAGAIN is normal exit in ET mode, not an error
     }
 }
 
@@ -205,7 +205,7 @@ void TcpConnection::handleClose() {
     setState(kDisconnected);
     channel_->disableAll();
 
-    // 通知上层连接关闭
+    // Notify upper layer of connection close
     if (closeCallback_) closeCallback_(shared_from_this());
     if (connectionCallback_) connectionCallback_(shared_from_this());
 }

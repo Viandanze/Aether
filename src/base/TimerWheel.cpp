@@ -26,7 +26,7 @@ void TimerWheel::stop() {
 }
 
 void TimerWheel::insert(const std::shared_ptr<TcpConnection>& conn) {
-    // 递增generation使旧条目失效
+    // Increment generation to invalidate old entries
     uint64_t gen = ++conn->idleTimerGeneration();
     size_t slot = (current_ + static_cast<size_t>(timeoutSeconds_)) % capacity_;
     wheel_[slot].push_back({conn, gen});
@@ -39,13 +39,13 @@ void TimerWheel::tick() {
     for (auto& entry : slot) {
         auto conn = entry.conn.lock();
         if (conn && conn->idleTimerGeneration() == entry.generation) {
-            // generation匹配→连接自上次insert以来没有新活动→空闲超时
+            // Generation match -> no new activity since last insert -> idle timeout
             if (conn->connected()) {
                 LOG_INFO("TimerWheel: idle timeout, closing [%s]", conn->name().c_str());
                 conn->shutdown();
             }
         }
-        // else: 过期条目（连接已刷新或已销毁），忽略
+        // else: expired entry (connection refreshed or destroyed), ignore
     }
 
     slot.clear();
