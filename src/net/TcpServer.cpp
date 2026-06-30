@@ -1,0 +1,119 @@
+#include "TcpServer.h"
+#include "EventLoop.h"
+#include "EventLoopThreadPool.h"
+#include "Acceptor.h"
+#include "InetAddress.h"
+#include "TcpConnection.h"
+#include "base/Logger.h"
+#include <cstdio>
+
+TcpServer::TcpServer(EventLoop* loop, const InetAddress& listenAddr, const std::string& name)
+    : loop_(loop),
+      name_(name),
+      acceptor_(new Acceptor(loop, listenAddr, true)),
+      threadPool_(new EventLoopThreadPool(loop, name)),
+      connCount_(0),
+      maxConnections_(0),
+      idleTimeoutSeconds_(0) {
+    acceptor_->setNewConnectionCallback([this](int fd, const InetAddress& peerAddr) {
+        newConnection(fd, peerAddr);
+    });
+}
+
+TcpServer::~TcpServer() {}
+
+void TcpServer::setThreadNum(int numThreads) {
+    threadPool_->setThreadNum(numThreads);
+}
+
+void TcpServer::start() {
+    threadPool_->start();
+
+    // If idle timeout configured, create TimerWheel on each EventLoop
+    if (idleTimeoutSeconds_ > 0) {
+        auto loops = threadPool_->getAllLoops();
+        for (auto* ioLoop : loops) {
+            ioLoop->setIdleTimeout(idleTimeoutSeconds_);
+        }
+    }
+
+    acceptor_->listen();
+    LOG_INFO("TcpServer[%s] started with %d IO threads, maxConn=%s, idleTimeout=%ds, listening...",
+             name_.c_str(), threadPool_->threadNum(),
+             maxConnections_ > 0 ? std::to_string(maxConnections_).c_str() : "unlimited",
+             idleTimeoutSeconds_);
+}
+
+void TcpServer::newConnection(int fd, const InetAddress& peerAddr) {
+    // Connection count limit check
+    if (maxConnections_ > 0 && static_cast<int>(connections_.size()) >= maxConnections_) {
+        LOG_WARN("TcpServer: max connections %d reached, rejecting %s",
+                 maxConnections_, peerAddr.toIpPort().c_str());
+        ::close(fd);
+        return;
+    }
+
+    char buf[64];
+    snprintf(buf, sizeof(buf), "-%d", connCount_++);
+    std::string connName = name_ + buf;
+
+    // 获取本端地址
+    struct sockaddr_in localAddr;
+    socklen_t len = sizeof(localAddr);
+    ::getsockname(fd, reinterpret_cast<sockaddr*>(&localAddr), &len);
+    InetAddress local(localAddr);
+
+    // Round-Robin选择IO线程
+    EventLoop* ioLoop = threadPool_->getNextLoop();
+
+    auto conn = std::make_shared<TcpConnection>(ioLoop, connName, fd, local, peerAddr);
+    connections_[connName] = conn;
+    conn->setConnectionCallback(connectionCallback_);
+    conn->setMessageCallback(messageCallback_);
+    conn->setWriteCompleteCallback(writeCompleteCallback_);
+    conn->setCloseCallback([this](const std::shared_ptr<TcpConnection>& c) {
+        removeConnection(c);
+    });
+
+    // 在IO线程中完成连接建立
+    ioLoop->runInLoop([conn]() { conn->connectEstablished(); });
+
+    LOG_INFO("New connection [%s] from %s -> loop %p (total: %zu)",
+             connName.c_str(), peerAddr.toIpPort().c_str(), ioLoop,
+             connections_.size());
+}
+
+void TcpServer::removeConnection(const std::shared_ptr<TcpConnection>& conn) {
+    // 线程安全：所有connections_操作必须在主EventLoop线程中执行
+    loop_->runInLoop([this, conn]() { removeConnectionInLoop(conn); });
+}
+
+void TcpServer::removeConnectionInLoop(const std::shared_ptr<TcpConnection>& conn) {
+    LOG_INFO("TcpServer::removeConnection [%s]", conn->name().c_str());
+    size_t n = connections_.erase(conn->name());
+    (void)n;
+
+    // 在连接所属IO线程中安全销毁
+    EventLoop* ioLoop = conn->getLoop();
+    ioLoop->queueInLoop([conn]() { conn->connectDestroyed(); });
+}
+
+// ─── 优雅关闭 ───
+
+void TcpServer::stopAccepting() {
+    loop_->runInLoop([this]() {
+        acceptor_->stopListening();
+        LOG_INFO("TcpServer[%s]: stopped accepting new connections, %zu active connections remaining",
+                 name_.c_str(), connections_.size());
+    });
+}
+
+void TcpServer::forceCloseAll() {
+    loop_->runInLoop([this]() {
+        LOG_WARN("TcpServer[%s]: force closing %zu connections",
+                 name_.c_str(), connections_.size());
+        for (auto& [name, conn] : connections_) {
+            conn->forceClose();
+        }
+    });
+}
