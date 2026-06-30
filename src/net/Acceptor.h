@@ -8,7 +8,7 @@ class InetAddress;
 class Socket;
 class Channel;
 
-/// Acceptor：监听端口，接受新连接
+/// Acceptor: listen on port, accept new connections
 class Acceptor : noncopyable {
 public:
     using NewConnectionCallback = std::function<void(int fd, const InetAddress&)>;
@@ -22,7 +22,7 @@ public:
 
     void listen();
     bool listening() const { return listening_; }
-    void stopListening();  // 停止监听（优雅关闭用）
+    void stopListening();  // Stop listening (for graceful shutdown)
 
 private:
     void handleRead();
@@ -32,5 +32,5 @@ private:
     std::unique_ptr<Channel> acceptChannel_;
     NewConnectionCallback newConnectionCallback_;
     bool listening_;
-    int idleFd_;  // Idle fd for handling EMFILE (file descriptor exhaustion)
+    int idleFd_;  // Idle fd for handling EMFILE (fd exhaustion)
 };

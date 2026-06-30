@@ -6,7 +6,7 @@ class Buffer;
 
 /// HttpContext: connection-level HTTP parsing state machine
 ///
-/// Handles packet sticking/half-packets: buffer may contain incomplete requests or multiple requests
+/// Handle sticky/half packets: buffer may contain incomplete or multiple requests
 ///
 /// State transitions:
 ///   ExpectRequestLine → ExpectHeaders → ExpectBody → GotComplete
@@ -29,9 +29,9 @@ public:
 
     HttpContext() : state_(kExpectRequestLine), chunkSize_(0) {}
 
-    /// 从Buffer中解析HTTP请求
-    /// 成功解析的部分会从Buffer中自动消费（retrieve）
-    /// 返回false表示解析错误，应关闭连接
+    /// Parse HTTP request from Buffer
+    /// Successfully parsed portion auto-consumed (retrieved) from Buffer
+    /// Returns false on parse error, connection should be closed
     bool parseRequest(Buffer* buf);
 
     bool gotComplete() const { return state_ == kGotComplete; }

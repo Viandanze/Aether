@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include <algorithm>
 
-// HttpRequest：HTTP请求的解析结果
+// HttpRequest: parsed HTTP request result
 class HttpRequest {
 public:
     enum Method { kInvalid, kGet, kPost, kHead, kPut, kDelete };
@@ -66,12 +66,12 @@ public:
         return 0;
     }
 
-    // --- 便捷方法 ---
+    // --- Convenience methods ---
     bool isKeepAlive() const {
         if (version_ == kHttp10) {
             return getHeader("Connection") == "keep-alive";
         }
-        // HTTP/1.1 默认keep-alive
+        // HTTP/1.1 default keep-alive
         return getHeader("Connection") != "close";
     }
 

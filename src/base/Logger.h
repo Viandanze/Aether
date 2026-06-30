@@ -4,7 +4,7 @@
 #include <cstdarg>
 #include <mutex>
 
-// 日志级别
+// Log levels
 enum class LogLevel {
     DEBUG,
     INFO,
@@ -13,18 +13,18 @@ enum class LogLevel {
     FATAL
 };
 
-// Logger：日志接口
-// 默认同步写stderr，可切换为异步模式（写入文件）
+// Logger: logging interface
+// Default sync to stderr, switchable to async mode (file output)
 class Logger {
 public:
     static Logger& instance();
     void setLevel(LogLevel level);
     void log(LogLevel level, const char* file, int line, const char* fmt, ...);
 
-    // 启用异步日志（写文件）
+    // Enable async logging (file output)
     void enableAsync(const std::string& logFile = "./aether.log");
 
-    // Get current log level
+    // Get current log levels
     LogLevel level() const { return level_; }
 
 private:

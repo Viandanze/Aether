@@ -11,13 +11,13 @@ class TcpConnection;
 /// TimerWheel: O(1) idle connection timeout management
 ///
 /// Design:
-/// - Single-level timing wheel, tick once per second, N slots (N = timeout seconds + 1)
+/// - Single-level wheel, tick per second, N slots (N = timeout seconds + 1)
 /// - Each slot holds (weak_ptr<TcpConnection>, generation) pairs
-/// - When connection is active: insert into (current + timeout) % capacity slot
-/// - On tick: check current slot - generation match → idle timeout → shutdown; no match → expired → ignore
-/// - To refresh connection: just ++generation and reinsert, old entries automatically invalidated
+/// - On connection activity (insert): place in slot (current + timeout) % capacity
+/// - On tick: check current slot - generation match -> idle timeout -> shutdown; no match -> expired -> ignore
+/// - To refresh: just ++generation and reinsert, old entries auto-invalidated
 ///
-/// Comparison with old approach (one runAfter Timer per connection):
+/// vs old approach (one runAfter Timer per connection):
 /// - Old: N connections = N Timer objects + N timerfd_settime calls
 /// - New: N connections = 1 one-second timer + O(k) tick (k = entries in current slot)
 class TimerWheel : noncopyable {
@@ -28,8 +28,8 @@ public:
     void start();
     void stop();
 
-    /// 插入或刷新一个连接的空闲计时
-    /// 必须在EventLoop线程中调用
+    /// Insert or refresh a connection's idle timeout
+    /// Must be called in EventLoop thread
     void insert(const std::shared_ptr<TcpConnection>& conn);
 
 private:

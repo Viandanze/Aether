@@ -7,7 +7,7 @@
 #include <cstring>
 #include <algorithm>
 
-// 创建timerfd
+// Create timerfd
 static int createTimerFd() {
     int fd = ::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
     if (fd < 0) {
@@ -16,7 +16,7 @@ static int createTimerFd() {
     return fd;
 }
 
-// 设置timerfd的过期时间
+// Set timerfd expiration time
 static void resetTimerFd(int fd, TimeStamp expiration) {
     struct itimerspec newValue;
     struct itimerspec oldValue;
@@ -25,7 +25,7 @@ static void resetTimerFd(int fd, TimeStamp expiration) {
 
     // When to trigger first
     newValue.it_value = expiration.toTimeSpec();
-    // 不设间隔（由TimerQueue自己管理重复定时器）
+    // No interval (TimerQueue manages repeating timers itself)
 
     int ret = ::timerfd_settime(fd, TFD_TIMER_ABSTIME, &newValue, &oldValue);
     if (ret < 0) {
@@ -33,7 +33,7 @@ static void resetTimerFd(int fd, TimeStamp expiration) {
     }
 }
 
-// 读取timerfd（必须读，否则epoll会持续触发）
+// Read timerfd (must read, otherwise epoll keeps triggering)
 static void readTimerFd(int fd) {
     uint64_t howmany;
     ssize_t n = ::read(fd, &howmany, sizeof(howmany));
@@ -58,7 +58,7 @@ TimerQueue::~TimerQueue() {
     timerFdChannel_->remove();
     ::close(timerFd_);
 
-    // 删除所有定时器
+    // Delete all timers
     for (auto& entry : timers_) {
         delete entry.second;
     }
@@ -74,7 +74,7 @@ void TimerQueue::addTimerInLoop(Timer* timer) {
     bool earliestChanged = insert(timer);
 
     if (earliestChanged) {
-        // 最早的定时器变了，重置timerfd
+        // Earliest timer changed, reset timerfd
         resetTimerFd(timerFd_, timer->expiration());
     }
 }
@@ -92,7 +92,7 @@ void TimerQueue::cancelInLoop(TimerId timerId) {
         delete it->first;
         activeTimers_.erase(it);
     } else if (callingExpiredTimers_) {
-        // 正在执行回调中的定时器，加入待取消列表
+        // Timers currently executing callbacks, add to canceling list
         cancelingTimers_.insert(timer);
     }
 }
@@ -107,7 +107,7 @@ void TimerQueue::handleRead() {
     cancelingTimers_.clear();
 
     for (auto& entry : expired) {
-        entry.second->run();  // 执行定时器回调
+        entry.second->run();  // Execute timer callback
     }
 
     callingExpiredTimers_ = false;
@@ -117,11 +117,11 @@ void TimerQueue::handleRead() {
 std::vector<TimerQueue::Entry> TimerQueue::getExpired(TimeStamp now) {
     std::vector<Entry> expired;
 
-    // sentinel：比now大的第一个
+    // Sentinel: first entry greater than now
     Entry sentry(now, reinterpret_cast<Timer*>(UINTPTR_MAX));
     auto end = timers_.lower_bound(sentry);
 
-    // [begin, end) 都是已过期的
+    // [begin, end) are all expired
     expired.assign(timers_.begin(), end);
     timers_.erase(timers_.begin(), end);
 
@@ -141,18 +141,18 @@ void TimerQueue::reset(const std::vector<Entry>& expired, TimeStamp now) {
     for (auto& entry : expired) {
         ActiveTimer timer(entry.second, entry.second->sequence());
 
-        // 如果在执行回调期间没有被取消，且是重复定时器，则重启
+        // If not cancelled during callback and is repeating, restart
         if (entry.second->repeat() &&
             cancelingTimers_.find(timer) == cancelingTimers_.end()) {
             entry.second->restart(now);
             insert(entry.second);
         } else {
-            // 不重复或已取消，删除Timer对象
+            // Non-repeating or cancelled, delete Timer object
             delete entry.second;
         }
     }
 
-    // 设置下一个timerfd
+    // Set next timerfd
     if (!timers_.empty()) {
         nextExpire = timers_.begin()->second->expiration();
         if (nextExpire.secondsFromNow() > 0) {

@@ -4,22 +4,22 @@
 
 class EventLoop;
 
-// Channel：fd的事件分发器
-// 每个fd（socket）对应一个Channel，负责注册epoll事件并回调
+// Channel: event dispatcher for fd
+// One Channel per fd (socket), handles epoll event registration and callbacks
 class Channel : noncopyable {
 public:
     using EventCallback = std::function<void()>;
     using ReadEventCallback = std::function<void()>;
 
-    // channel在epoller中的状态
+    // Channel state in epoller
     enum { kNew = -1, kAdded = 1, kDeleted = 2 };
 
     Channel(EventLoop* loop, int fd);
     ~Channel();
 
-    void handleEvent();  // 核心方法：根据revents回调
+    void handleEvent();  // Core method: dispatch based on revents
 
-    // 设置回调
+    // Set callbacks
     void setReadCallback(ReadEventCallback cb) { readCallback_ = std::move(cb); }
     void setWriteCallback(EventCallback cb)    { writeCallback_ = std::move(cb); }
     void setCloseCallback(EventCallback cb)    { closeCallback_ = std::move(cb); }
@@ -31,7 +31,7 @@ public:
     void disableWriting() { events_ &= ~kWriteEvent; update(); }
     void disableAll()     { events_ = kNoneEvent; update(); }
 
-    // ET模式
+    // ET mode
     void enableET() { events_ |= kET; update(); }
 
     bool isNoneEvent() const { return events_ == kNoneEvent; }
@@ -44,7 +44,7 @@ public:
     void set_index(int idx) { index_ = idx; }
 
     EventLoop* ownerLoop() { return loop_; }
-    void remove();  // 从EventLoop中移除自己
+    void remove();  // Remove self from EventLoop
 
 private:
     void update();
@@ -56,9 +56,9 @@ private:
 
     EventLoop* loop_;
     const int fd_;
-    int events_;     // 注册的事件
-    int revents_;    // epoll返回的就绪事件
-    int index_;      // 在epoller中的状态
+    int events_;     // Registered events
+    int revents_;    // Ready events returned by epoll
+    int index_;      // State in epoller
 
     ReadEventCallback readCallback_;
     EventCallback writeCallback_;

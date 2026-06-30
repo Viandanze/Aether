@@ -12,10 +12,10 @@ class Socket;
 class Channel;
 class InetAddress;
 
-/// TcpConnection：管理一个已建立的TCP连接
+/// TcpConnection: manages an established TCP connection
 ///
-/// 生命周期：Connecting → Connected → Disconnecting → Disconnected
-/// 使用shared_ptr管理，确保回调期间连接不会被销毁
+/// Lifecycle: Connecting -> Connected -> Disconnecting -> Disconnected
+/// Managed with shared_ptr to prevent destruction during callbacks
 class TcpConnection : noncopyable,
                       public std::enable_shared_from_this<TcpConnection> {
 public:
@@ -36,17 +36,17 @@ public:
     bool connected() const { return state_ == kConnected; }
     bool disconnected() const { return state_ == kDisconnected; }
 
-    // ─── 发送 ───
+    // ─── Send ───
     void send(const std::string& message);
     void send(const char* data, size_t len);
-    void send(Buffer* buf);  // 零拷贝swap
+    void send(Buffer* buf);  // Zero-copy swap
 
-    // ─── 关闭 ───
-    void shutdown();       // 半关闭（发完待写数据后关闭写端）
-    void forceClose();     // 立即关闭
+    // ─── Close ───
+    void shutdown();       // Half-close (close write end after flushing pending data)
+    void forceClose();     // Immediate close
     void forceCloseWithDelay(double seconds);  // Delayed force close
 
-    // ─── 回调设置 ───
+    // ─── Callbacks ───
     void setConnectionCallback(ConnectionCallback cb) { connectionCallback_ = std::move(cb); }
     void setMessageCallback(MessageCallback cb) { messageCallback_ = std::move(cb); }
     void setWriteCompleteCallback(WriteCompleteCallback cb) { writeCompleteCallback_ = std::move(cb); }
@@ -56,23 +56,23 @@ public:
         highWaterMark_ = highWaterMark;
     }
 
-    // ─── 上下文 ───
+    // ─── Context ───
     void setContext(const std::any& ctx) { context_ = ctx; }
     const std::any& getContext() const { return context_; }
     std::any* getMutableContext() { return &context_; }
 
-    // ─── Buffer访问 ───
+    // ─── Buffer access ───
     Buffer* inputBuffer() { return &inputBuf_; }
     Buffer* outputBuffer() { return &outputBuf_; }
 
-    // ─── Idle timeout (for TimerWheel) ───
+    // ─── Idle timeout (for TimerWheel)───
     uint64_t idleTimerGeneration() const { return idleTimerGeneration_; }
     uint64_t& idleTimerGeneration() { return idleTimerGeneration_; }
 
-    // ─── TCP选项 ───
+    // ─── TCP options ───
     void setTcpNoDelay(bool on);
 
-    // ─── 连接建立/销毁（内部调用）───
+    // ─── Connection establish/destroy (internal)───
     void connectEstablished();
     void connectDestroyed();
 
@@ -97,8 +97,8 @@ private:
     InetAddress localAddr_;
     InetAddress peerAddr_;
 
-    Buffer inputBuf_;   // 读缓冲
-    Buffer outputBuf_;  // 写缓冲
+    Buffer inputBuf_;   // Read buffer
+    Buffer outputBuf_;  // Write buffer
 
     ConnectionCallback connectionCallback_;
     MessageCallback messageCallback_;
@@ -107,7 +107,7 @@ private:
     HighWaterMarkCallback highWaterMarkCallback_;
     size_t highWaterMark_;
 
-    std::any context_;  // 连接级上下文（如HttpContext）
+    std::any context_;  // Connection-level context (e.g. HttpContext)
 
-    uint64_t idleTimerGeneration_;  // TimerWheel用，每次刷新递增使旧条目失效
+    uint64_t idleTimerGeneration_;  // For TimerWheel, incremented on refresh to invalidate old entries
 };

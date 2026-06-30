@@ -3,9 +3,9 @@
 #include <atomic>
 #include "TimeStamp.h"
 
-// Timer：定时器抽象
-// 持有回调、过期时间、是否重复、间隔
-// 由TimerQueue管理生命周期
+// Timer: timer abstraction
+// Holds callback, expiration, repeat flag, interval
+// Lifecycle managed by TimerQueue
 class Timer {
 public:
     using TimerCallback = std::function<void()>;
@@ -28,7 +28,7 @@ public:
         if (repeat_) {
             expiration_ = TimeStamp::after(interval_ > 0 ? interval_ : 0.001);
         } else {
-            expiration_ = TimeStamp();  // 不重复，置空
+            expiration_ = TimeStamp();  // Non-repeating, clear to empty
         }
     }
 

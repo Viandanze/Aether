@@ -13,10 +13,10 @@ class Channel;
 class TimerQueue;
 class TimerWheel;
 
-/// EventLoop：事件循环，一个线程一个EventLoop
+/// EventLoop: one event loop per thread
 ///
-/// 核心职责：poll等待事件 → 分发到Channel处理 → 执行定时器 → 处理跨线程任务
-/// 集成TimerWheel用于空闲连接超时管理
+/// Core duties: poll -> dispatch to Channel -> run timers -> handle cross-thread tasks
+/// Integrates TimerWheel for idle connection timeout management
 class EventLoop : noncopyable {
 public:
     using Functor = std::function<void()>;
@@ -27,11 +27,11 @@ public:
     void loop();
     void quit();
 
-    // Channel管理
+    // Channel management
     void updateChannel(Channel* channel);
     void removeChannel(Channel* channel);
 
-    // 跨线程任务投递
+    // Cross-thread task dispatch
     void runInLoop(Functor cb);
     void queueInLoop(Functor cb);
     void wakeup();
@@ -44,7 +44,7 @@ public:
         }
     }
 
-    // ─── 定时器接口 ───
+    // ─── Timer interface ───
     TimerId runAt(TimeStamp time, Timer::TimerCallback cb);
     TimerId runAfter(double delay, Timer::TimerCallback cb);
     TimerId runEvery(double interval, Timer::TimerCallback cb);

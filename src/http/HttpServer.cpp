@@ -24,7 +24,7 @@ void HttpServer::onConnection(const std::shared_ptr<TcpConnection>& conn) {
         conn->setContext(HttpContext());
         LOG_INFO("HttpServer: new connection from %s", conn->peerAddr().toIpPort().c_str());
 
-        // 首次插入TimerWheel（如果配置了空闲超时）
+        // Insert into TimerWheel on first access (if idle timeout configured)
         conn->getLoop()->insertToWheel(conn);
     } else {
         LOG_INFO("HttpServer: connection closed from %s", conn->peerAddr().toIpPort().c_str());
@@ -46,13 +46,13 @@ void HttpServer::onMessage(const std::shared_ptr<TcpConnection>& conn, Buffer* b
         if (ctx->gotComplete()) {
             onRequest(conn, ctx->request());
             ctx->reset();
-            // 继续解析buffer中可能剩余的请求（pipelining）
+            // Continue parsing remaining requests in buffer (pipelining)
         } else {
-            break;  // 请求不完整，等待更多数据
+            break;  // Request incomplete, wait for more data
         }
     }
 
-    // 刷新空闲超时（连接有活动）
+    // Refresh idle timeout (connection is active)
     conn->getLoop()->insertToWheel(conn);
 }
 

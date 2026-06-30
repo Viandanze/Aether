@@ -11,7 +11,7 @@ EventLoopThreadPool::EventLoopThreadPool(EventLoop* baseLoop, const std::string&
       next_(0) {}
 
 EventLoopThreadPool::~EventLoopThreadPool() {
-    // threads_ 中的 unique_ptr 会自动析构，EventLoopThread 析构时 quit + join
+    // unique_ptrs in threads_ auto-destroy; EventLoopThread destructor does quit + join
 }
 
 void EventLoopThreadPool::start(const ThreadInitCallback& cb) {
@@ -36,12 +36,12 @@ void EventLoopThreadPool::start(const ThreadInitCallback& cb) {
 }
 
 EventLoop* EventLoopThreadPool::getNextLoop() {
-    // 单Reactor模式，所有连接由主线程处理
+    // Single Reactor mode, all connections handled by main thread
     if (loops_.empty()) {
         return baseLoop_;
     }
 
-    // Round-Robin：原子递增取模，保证多线程安全
+    // Round-Robin: atomic increment modulo, thread-safe
     int idx = next_.fetch_add(1) % loops_.size();
     return loops_[idx];
 }

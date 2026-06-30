@@ -2,7 +2,7 @@
 #include <string>
 #include <netinet/in.h>
 
-// IP地址+端口封装
+// IP address + port wrapper
 class InetAddress {
 public:
     explicit InetAddress(uint16_t port = 0, bool loopbackOnly = false);

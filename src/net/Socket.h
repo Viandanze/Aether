@@ -1,7 +1,7 @@
 #pragma once
 #include "base/noncopyable.h"
 
-// RAII封装socket fd
+// RAII wrapper for socket fd
 class Socket : noncopyable {
 public:
     explicit Socket(int fd) : fd_(fd) {}
@@ -9,18 +9,18 @@ public:
 
     int fd() const { return fd_; }
 
-    // 服务端socket操作
+    // Server-side socket operations
     void bindAddress(const class InetAddress& localAddr);
     void listen();
     int  accept(class InetAddress* peerAddr);
 
-    // socket选项
+    // Socket options
     void setReuseAddr(bool on);
     void setReusePort(bool on);
     void setTcpNoDelay(bool on);
     void setKeepAlive(bool on);
 
-    // 关闭写端
+    // Shutdown write end
     void shutdownWrite();
 
 private:
