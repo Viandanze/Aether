@@ -155,4 +155,5 @@ void EventLoop::insertToWheel(const std::shared_ptr<TcpConnection>& conn) {
     if (timerWheel_) {
         timerWheel_->insert(conn);
     }
+    // If timerWheel_ is null, idle timeout was not configured - this is normal, no warning needed
 }

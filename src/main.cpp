@@ -2,6 +2,8 @@
 #include "net/InetAddress.h"
 #include "http/HttpServer.h"
 #include "base/Logger.h"
+#include <atomic>
+#include <climits>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -11,6 +13,7 @@
 #include <sys/stat.h>
 
 // ─── Global variables (for signal handling)───
+std::atomic<bool> g_running{false};
 EventLoop* g_loop = nullptr;
 HttpServer* g_server = nullptr;
 
@@ -20,6 +23,10 @@ void installSignalHandlers() {
 
     // SIGINT/SIGTERM: graceful Close
     auto handler = [](int sig) {
+        if (!g_running.load(std::memory_order_relaxed)) {
+            // Server not fully started yet, ignore signal
+            return;
+        }
         LOG_INFO("Received signal %d, starting graceful shutdown...", sig);
         if (g_server && g_loop) {
             // Stop accepting new connections
@@ -75,7 +82,12 @@ std::string getMimeType(const std::string& path) {
 // ─── Path safety check ───
 bool isPathSafe(const std::string& path) {
     // Block path traversal attacks
+    // Check for ".." in URL path components
     if (path.find("..") != std::string::npos) return false;
+    // Block null bytes and control characters
+    for (char c : path) {
+        if (c <= 0x1f || c == 0x7f) return false;
+    }
     return true;
 }
 
@@ -124,6 +136,20 @@ void onRequest(const HttpRequest& req, HttpResponse* resp) {
     if (::stat(filePath.c_str(), &st) != 0 || S_ISDIR(st.st_mode)) {
         *resp = HttpResponse::notFound();
         return;
+    }
+
+    // Verify resolved path is within serve directory (defend against symlinks/encoding)
+    char realPathBuf[PATH_MAX];
+    if (::realpath(filePath.c_str(), realPathBuf) != nullptr) {
+        char realDirBuf[PATH_MAX];
+        if (::realpath(serveDir.c_str(), realDirBuf) != nullptr) {
+            std::string resolvedFile(realPathBuf);
+            std::string resolvedDir(realDirBuf);
+            if (resolvedFile.find(resolvedDir + "/") != 0 && resolvedFile != resolvedDir) {
+                *resp = HttpResponse::forbidden();
+                return;
+            }
+        }
     }
 
     // Read file
@@ -235,9 +261,11 @@ int main(int argc, char* argv[]) {
     server.start();
 
     LOG_INFO("Server running. Press Ctrl+C for graceful shutdown.");
+    g_running.store(true, std::memory_order_release);
     loop.loop();
 
     LOG_INFO("Event loop exited, server shutdown complete.");
+    g_running.store(false, std::memory_order_release);
     g_loop = nullptr;
     g_server = nullptr;
 

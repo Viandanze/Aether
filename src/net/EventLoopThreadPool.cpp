@@ -42,7 +42,13 @@ EventLoop* EventLoopThreadPool::getNextLoop() {
     }
 
     // Round-Robin: atomic increment modulo, thread-safe
-    int idx = next_.fetch_add(1) % loops_.size();
+    // Reset periodically to prevent integer overflow
+    int expected = next_.load();
+    if (expected > 1000000) {
+        next_.store(0);
+        expected = 0;
+    }
+    int idx = next_.fetch_add(1) % static_cast<int>(loops_.size());
     return loops_[idx];
 }
 
