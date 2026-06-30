@@ -67,6 +67,11 @@ public:
     }
 
     // --- Convenience methods ---
+    bool hasBodyExpected() const {
+        // POST, PUT methods expect a body
+        return method_ == kPost || method_ == kPut;
+    }
+
     bool isKeepAlive() const {
         if (version_ == kHttp10) {
             return getHeader("Connection") == "keep-alive";

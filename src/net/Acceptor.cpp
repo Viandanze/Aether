@@ -41,21 +41,36 @@ void Acceptor::stopListening() {
 }
 
 void Acceptor::handleRead() {
-    InetAddress peerAddr;
-    int connFd = acceptSocket_->accept(&peerAddr);
-    if (connFd >= 0) {
-        if (newConnectionCallback_) {
-            newConnectionCallback_(connFd, peerAddr);
+    // ET mode: must loop accept until EAGAIN or EMFILE
+    for (;;) {
+        InetAddress peerAddr;
+        int connFd = acceptSocket_->accept(&peerAddr);
+        if (connFd >= 0) {
+            if (newConnectionCallback_) {
+                newConnectionCallback_(connFd, peerAddr);
+            } else {
+                ::close(connFd);
+            }
         } else {
-            ::close(connFd);
+            // accept failed - check why
+            int savedErrno = errno;
+            if (savedErrno == EMFILE) {
+                // Too many open files: accept and immediately close one
+                ::close(idleFd_);
+                idleFd_ = ::accept(acceptSocket_->fd(), nullptr, nullptr);
+                ::close(idleFd_);
+                idleFd_ = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
+                LOG_WARN("Acceptor: EMFILE hit, used idleFd trick");
+            } else if (savedErrno == EAGAIN || savedErrno == EWOULDBLOCK) {
+                // All pending connections accepted in ET mode
+                break;
+            } else if (savedErrno == ECONNABORTED || savedErrno == EINTR) {
+                // Transient errors, retry
+                continue;
+            } else {
+                LOG_ERROR("Acceptor::handleRead accept error: %s", strerror(savedErrno));
+                break;
+            }
         }
-    } else {
-        if (errno == EMFILE) {
-            ::close(idleFd_);
-            idleFd_ = ::accept(acceptSocket_->fd(), nullptr, nullptr);
-            ::close(idleFd_);
-            idleFd_ = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
-        }
-        LOG_ERROR("Acceptor::handleRead accept error: %s", strerror(errno));
     }
 }

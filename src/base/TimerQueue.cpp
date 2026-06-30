@@ -152,12 +152,14 @@ void TimerQueue::reset(const std::vector<Entry>& expired, TimeStamp now) {
         }
     }
 
-    // Set next timerfd
+    // Set next timerfd - always arm it, even if already expired
     if (!timers_.empty()) {
         nextExpire = timers_.begin()->second->expiration();
-        if (nextExpire.secondsFromNow() > 0) {
-            resetTimerFd(timerFd_, nextExpire);
+        if (nextExpire.secondsFromNow() <= 0) {
+            // Already expired, fire ASAP (1ms from now)
+            nextExpire = TimeStamp::after(0.001);
         }
+        resetTimerFd(timerFd_, nextExpire);
     }
 }
 

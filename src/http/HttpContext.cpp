@@ -45,6 +45,11 @@ bool HttpContext::parseRequest(Buffer* buf) {
                         size_t bodyLen = request_.contentLength();
                         if (bodyLen > 0) {
                             state_ = kExpectBody;
+                        } else if (request_.hasBodyExpected()) {
+                            // POST/PUT/DELETE without Content-Length or chunked
+                            LOG_ERROR("HttpContext: %s request with no Content-Length or Transfer-Encoding",
+                                      request_.methodString());
+                            return false;
                         } else {
                             state_ = kGotComplete;
                         }

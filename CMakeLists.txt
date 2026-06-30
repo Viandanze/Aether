@@ -8,15 +8,21 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Linux feature macros（确保eventfd/timerfd/SOCK_NONBLOCK等可用）
 add_definitions(-D_GNU_SOURCE)
 
-# 编译选项
+# AddressSanitizer (optional, for debug builds)
+option(ENABLE_ASAN "Enable AddressSanitizer in debug builds" OFF)
+
+# Compile options
 if(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
     set(CMAKE_CXX_FLAGS_DEBUG "/Od /Zi")
     set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG")
 else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
-    set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -fsanitize=address")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O2 /DNDEBUG")
+    set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
+    if(ENABLE_ASAN)
+        set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize=address")
+    endif()
+    set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
 endif()
 
 # 源文件
