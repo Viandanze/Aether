@@ -1,13 +1,3 @@
----
-AIGC:
-    Label: "1"
-    ContentProducer: 001191110102MACQD9K64018705
-    ProduceID: 1716792653782763_0/project_7652301137504190747-files/README.md
-    ReservedCode1: ""
-    ContentPropagator: 001191110102MACQD9K64028705
-    PropagateID: 1716792653782763#1782819436881
-    ReservedCode2: ""
----
 # Aether
 
 High-performance HTTP server built with C++17, featuring a master-slave Reactor architecture with epoll edge-triggered I/O.
@@ -170,6 +160,3 @@ src/
 | `HttpServer.cpp` | Pipelining loop-parse? Why retrieve after each request? |
 | `AsyncLogger.cpp` | Double buffering? Date+size rotation? Why swap not copy? |
 
----
-
-> 本内容由 Coze AI 生成，请遵循相关法律法规及《人工智能生成合成内容标识办法》使用与传播。
