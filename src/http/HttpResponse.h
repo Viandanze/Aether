@@ -28,6 +28,7 @@ public:
           closeConnection_(closeConnection) {}
 
     void setStatusCode(HttpStatusCode code) { statusCode_ = code; }
+    HttpStatusCode statusCode() const { return statusCode_; }
     void setStatusMessage(const std::string& msg) { statusMessage_ = msg; }
 
     void setCloseConnection(bool on) { closeConnection_ = on; }
