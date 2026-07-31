@@ -42,6 +42,7 @@ public:
     bool operator<(const TimeStamp& rhs) const { return steadyTime_ < rhs.steadyTime_; }
     bool operator<=(const TimeStamp& rhs) const { return steadyTime_ <= rhs.steadyTime_; }
     bool operator>(const TimeStamp& rhs) const { return steadyTime_ > rhs.steadyTime_; }
+    bool operator>=(const TimeStamp& rhs) const { return steadyTime_ >= rhs.steadyTime_; }
     bool operator==(const TimeStamp& rhs) const { return steadyTime_ == rhs.steadyTime_; }
 
     SteadyTimePoint steadyTime() const { return steadyTime_; }
