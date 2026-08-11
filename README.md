@@ -135,28 +135,3 @@ src/
     ├── HttpContext.h/.cpp      # HTTP parse state machine (chunked + Buffer)
     └── HttpServer.h/.cpp       # HTTP server + pipelining
 ```
-
-## Roadmap
-
-- [x] Week 1-2: Network layer scaffold (epoll/Channel/EventLoop/TcpServer)
-- [x] Week 3: HTTP parser + EventLoopThreadPool + static file serving
-- [x] Week 4: Timer module + async logger + connection limit + graceful shutdown + chunked encoding
-- [x] Week 5-6: Buffer + TimerWheel + log rotation + HTTP pipelining + graceful shutdown v2
-- [ ] Week 7-8: GTest unit tests + wrk benchmarking + perf analysis
-
-## Interview Highlights
-
-| Code Location | Must-Ask Question |
-|---------------|-------------------|
-| `Buffer.h` | Why readv+extrabuf? Why not just one big buffer? makeSpace strategy? |
-| `Epoller.cpp` | epoll LT vs ET? Why ET needs non-blocking loop-read? epoll vs select? |
-| `EventLoop.cpp` | eventfd vs pipe for wakeup? Why swap in doPendingFunctors? timerfd? |
-| `TimerQueue.cpp` | Why timerfd not timer_create? How to handle cancel during callback? |
-| `TimerWheel.h` | O(1) vs O(logN) TimerQueue? Generation-based invalidation? Slot cleanup? |
-| `Acceptor.cpp` | EMFILE handling? idleFd trick? SO_REUSEPORT? |
-| `TcpConnection.cpp` | Buffer vs vector<char>? High water mark? forceClose vs shutdown? |
-| `TcpServer.cpp` | Round-Robin dispatch? Graceful shutdown flow? Thread safety of connections_? |
-| `HttpContext.cpp` | FSM design? Half-packet/sticky-packet? Buffer integration? |
-| `HttpServer.cpp` | Pipelining loop-parse? Why retrieve after each request? |
-| `AsyncLogger.cpp` | Double buffering? Date+size rotation? Why swap not copy? |
-
