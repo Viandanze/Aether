@@ -135,5 +135,3 @@ src/
     ├── HttpContext.h/.cpp      # HTTP parse state machine (chunked + Buffer)
     └── HttpServer.h/.cpp       # HTTP server + pipelining
 ```
-
-
