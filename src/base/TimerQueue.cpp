@@ -7,7 +7,7 @@
 #include <cstring>
 #include <algorithm>
 
-// Create timerfd
+// create timerfd
 static int createTimerFd() {
     int fd = ::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
     if (fd < 0) {
@@ -16,16 +16,16 @@ static int createTimerFd() {
     return fd;
 }
 
-// Set timerfd expiration time
+// set timerfd expiration
 static void resetTimerFd(int fd, TimeStamp expiration) {
     struct itimerspec newValue;
     struct itimerspec oldValue;
     memset(&newValue, 0, sizeof(newValue));
     memset(&oldValue, 0, sizeof(oldValue));
 
-    // When to trigger first
+    // when it should fire first
     newValue.it_value = expiration.toTimeSpec();
-    // No interval (TimerQueue manages repeating timers itself)
+    // no interval (TimerQueue manages repeating timers itself)
 
     int ret = ::timerfd_settime(fd, TFD_TIMER_ABSTIME, &newValue, &oldValue);
     if (ret < 0) {
@@ -33,7 +33,7 @@ static void resetTimerFd(int fd, TimeStamp expiration) {
     }
 }
 
-// Read timerfd (must read, otherwise epoll keeps triggering)
+// read timerfd (mandatory, otherwise epoll keeps triggering)
 static void readTimerFd(int fd) {
     uint64_t howmany;
     ssize_t n = ::read(fd, &howmany, sizeof(howmany));
@@ -58,7 +58,7 @@ TimerQueue::~TimerQueue() {
     timerFdChannel_->remove();
     ::close(timerFd_);
 
-    // Delete all timers
+    // delete all timers
     for (auto& entry : timers_) {
         delete entry.second;
     }
@@ -74,7 +74,7 @@ void TimerQueue::addTimerInLoop(Timer* timer) {
     bool earliestChanged = insert(timer);
 
     if (earliestChanged) {
-        // Earliest timer changed, reset timerfd
+        // earliest timer changed, reset timerfd
         resetTimerFd(timerFd_, timer->expiration());
     }
 }
@@ -92,7 +92,7 @@ void TimerQueue::cancelInLoop(TimerId timerId) {
         delete it->first;
         activeTimers_.erase(it);
     } else if (callingExpiredTimers_) {
-        // Timers currently executing callbacks, add to canceling list
+        // timer whose callback is running: add to the canceling list
         cancelingTimers_.insert(timer);
     }
 }
@@ -107,7 +107,7 @@ void TimerQueue::handleRead() {
     cancelingTimers_.clear();
 
     for (auto& entry : expired) {
-        entry.second->run();  // Execute timer callback
+        entry.second->run();  // run timer callback
     }
 
     callingExpiredTimers_ = false;
@@ -117,7 +117,7 @@ void TimerQueue::handleRead() {
 std::vector<TimerQueue::Entry> TimerQueue::getExpired(TimeStamp now) {
     std::vector<Entry> expired;
 
-    // Sentinel: first entry greater than now
+    // sentinel: first entry greater than now
     Entry sentry(now, reinterpret_cast<Timer*>(UINTPTR_MAX));
     auto end = timers_.lower_bound(sentry);
 
@@ -125,7 +125,7 @@ std::vector<TimerQueue::Entry> TimerQueue::getExpired(TimeStamp now) {
     expired.assign(timers_.begin(), end);
     timers_.erase(timers_.begin(), end);
 
-    // Synchronously remove from activeTimers_
+    // remove from activeTimers_ in sync
     for (auto& entry : expired) {
         ActiveTimer timer(entry.second, entry.second->sequence());
         size_t n = activeTimers_.erase(timer);
@@ -141,22 +141,23 @@ void TimerQueue::reset(const std::vector<Entry>& expired, TimeStamp now) {
     for (auto& entry : expired) {
         ActiveTimer timer(entry.second, entry.second->sequence());
 
-        // If not cancelled during callback and is repeating, restart
+        // if not cancelled during callback execution and repeating, restart
         if (entry.second->repeat() &&
             cancelingTimers_.find(timer) == cancelingTimers_.end()) {
             entry.second->restart(now);
             insert(entry.second);
         } else {
-            // Non-repeating or cancelled, delete Timer object
+            // one-shot or cancelled: delete the Timer object
             delete entry.second;
         }
     }
 
-    // Set next timerfd - always arm it, even if already expired
+    // arm the next timerfd
     if (!timers_.empty()) {
         nextExpire = timers_.begin()->second->expiration();
         if (nextExpire.secondsFromNow() <= 0) {
-            // Already expired, fire ASAP (1ms from now)
+            // already expired (e.g. tiny interval / clock skew): clamp to +1ms
+            // so the timerfd still fires instead of being silently dropped
             nextExpire = TimeStamp::after(0.001);
         }
         resetTimerFd(timerFd_, nextExpire);

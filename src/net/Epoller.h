@@ -1,3 +1,5 @@
+#ifndef AETHER_NET_EPOLLER_H
+#define AETHER_NET_EPOLLER_H
 #pragma once
 #include <vector>
 #include <sys/epoll.h>
@@ -6,17 +8,17 @@
 
 class Channel;
 
-// Epoller: supports LT/ET mode
+// epoll wrapper: supports LT/ET modes
 class Epoller : noncopyable {
 public:
     Epoller();
     ~Epoller();
 
-    // Event operations
-    void updateChannel(Channel* channel);   // Add/modify
-    void removeChannel(Channel* channel);   // Delete
+    // event operations
+    void updateChannel(Channel* channel);   // add/modify
+    void removeChannel(Channel* channel);   // remove
 
-    // Block wait for events, return ready Channel list
+    // block waiting for events, return the ready Channels
     using ChannelList = std::vector<Channel*>;
     int poll(int timeoutMs, ChannelList* activeChannels);
 
@@ -29,3 +31,4 @@ private:
     int epollFd_;
     std::vector<struct epoll_event> events_;
 };
+#endif // AETHER_NET_EPOLLER_H

@@ -66,7 +66,7 @@ void test_response_serialize_format() {
     // Auto Content-Length
     ASSERT_CONTAINS(s, "Content-Length: 14\r\n");
     // Auto Server header
-    ASSERT_CONTAINS(s, "Server: Aether\r\n");
+    ASSERT_CONTAINS(s, "Server: Aether/0.5\r\n");
     // Connection header (keep-alive by default)
     ASSERT_CONTAINS(s, "Connection: keep-alive\r\n");
     // Body

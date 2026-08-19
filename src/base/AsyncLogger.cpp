@@ -7,6 +7,7 @@
 #include <cstring>
 #include <algorithm>
 #include <filesystem>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 
@@ -35,7 +36,7 @@ AsyncLogger::~AsyncLogger() {
 
 void AsyncLogger::start() {
     running_ = true;
-    rollFile();  // Create log file on startup
+    rollFile();  // create the log file at startup
     thread_ = std::thread([this]() { threadFunc(); });
 }
 
@@ -86,7 +87,7 @@ void AsyncLogger::threadFunc() {
             }
         }
 
-        // Check if day rolled over
+        // check for day rollover
         time_t now = time(nullptr);
         struct tm tm_now;
         localtime_r(&now, &tm_now);
@@ -99,20 +100,20 @@ void AsyncLogger::threadFunc() {
             rollFile();
         }
 
-        // Write to file (no lock needed)
+        // write to file (no lock needed)
         for (auto& buf : buffersToWrite_) {
             fileStream_.write(buf->data(), buf->length());
             writtenBytes_ += buf->length();
         }
 
-        // Check if size-based rotation needed
+        // check size-based rollover
         if (writtenBytes_ >= rollSize_) {
             rollFile();
         }
 
         fileStream_.flush();
 
-        // Recycle buffers (reuse)
+        // recycle buffers for reuse
         if (buffersToWrite_.size() > 1) {
             buffersToWrite_.erase(buffersToWrite_.begin() + 1, buffersToWrite_.end());
         }
@@ -123,7 +124,7 @@ void AsyncLogger::threadFunc() {
         buffersToWrite_.clear();
     }
 
-    // Flush before exit
+    // flush before exit
     if (fileStream_.is_open()) {
         fileStream_.flush();
         fileStream_.close();
@@ -134,7 +135,7 @@ std::string AsyncLogger::getLogFileName(const struct tm& tm_now) {
     char timeStr[32];
     strftime(timeStr, sizeof(timeStr), "%Y%m%d-%H%M%S", &tm_now);
 
-    // Format: basename.20260622-180530.pid12345.log
+    // format: basename.20260622-180530.pid12345.log
     return logFile_ + "." + timeStr + ".pid" + std::to_string(::getpid()) + ".log";
 }
 
@@ -156,15 +157,15 @@ void AsyncLogger::rollFile() {
     writtenBytes_ = 0;
     lastDay_ = tm_now.tm_mday;
 
-    // Clean old log files
+    // clean up old log files
     cleanOldFiles();
 }
 
 void AsyncLogger::cleanOldFiles() {
-    if (keepFiles_ <= 0) return;  // 0=don't clean
+    if (keepFiles_ <= 0) return;  // 0 = no cleanup
 
     try {
-        // Collect all matching log files
+        // collect all matching log files
         fs::path dir = fs::path(logFile_).parent_path();
         if (dir.empty()) dir = ".";
 
@@ -174,20 +175,20 @@ void AsyncLogger::cleanOldFiles() {
         for (const auto& entry : fs::directory_iterator(dir)) {
             if (entry.is_regular_file()) {
                 std::string name = entry.path().filename().string();
-                // Match basename.*.pid*.log
+                // match basename.*.pid*.log
                 if (name.find(baseName) == 0 && name.size() > baseName.size()) {
                     logFiles.push_back(entry.path());
                 }
             }
         }
 
-        // Sort by modification time (oldest first)
+        // sort by modification time (oldest first)
         std::sort(logFiles.begin(), logFiles.end(),
             [](const fs::path& a, const fs::path& b) {
                 return fs::last_write_time(a) < fs::last_write_time(b);
             });
 
-        // Keep newest keepFiles_ files, delete the rest
+        // keep the newest keepFiles_ files, delete the rest
         if (static_cast<int>(logFiles.size()) > keepFiles_) {
             int toDelete = static_cast<int>(logFiles.size()) - keepFiles_;
             for (int i = 0; i < toDelete; ++i) {
@@ -196,7 +197,7 @@ void AsyncLogger::cleanOldFiles() {
             }
         }
     } catch (const fs::filesystem_error& e) {
-        // Filesystem errors don't interrupt logging
+        // filesystem errors must not break log writing
         LOG_ERROR("AsyncLogger: cleanOldFiles error: %s", e.what());
     }
 }

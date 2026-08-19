@@ -32,14 +32,14 @@ const char* Logger::levelStr(LogLevel level) {
 void Logger::log(LogLevel level, const char* file, int line, const char* fmt, ...) {
     if (level < level_) return;
 
-    // Format user message
+    // format user message
     char msgBuf[4096];
     va_list args;
     va_start(args, fmt);
     vsnprintf(msgBuf, sizeof(msgBuf), fmt, args);
     va_end(args);
 
-    // Format complete log line
+    // format full log line
     time_t now = time(nullptr);
     struct tm tm_buf;
     localtime_r(&now, &tm_buf);
@@ -54,10 +54,10 @@ void Logger::log(LogLevel level, const char* file, int line, const char* fmt, ..
                        timeStr, levelStr(level), filename, line, msgBuf);
 
     if (asyncMode_) {
-        // Async mode: write to buffer
+        // async mode: write into buffer
         AsyncLogger::instance().append(lineBuf, len);
     } else {
-        // Sync mode: write directly to stderr
+        // sync mode: write directly to stderr
         std::lock_guard<std::mutex> lock(mtx_);
         fwrite(lineBuf, 1, len, stderr);
         fflush(stderr);
@@ -65,7 +65,7 @@ void Logger::log(LogLevel level, const char* file, int line, const char* fmt, ..
 
     if (level == LogLevel::FATAL) {
         if (asyncMode_) {
-            AsyncLogger::instance().stop();  // Ensure log is flushed
+            AsyncLogger::instance().stop();  // make sure logs are flushed
         }
         abort();
     }

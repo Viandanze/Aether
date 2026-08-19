@@ -3,6 +3,8 @@
 #include "base/Logger.h"
 #include <cassert>
 #include <cerrno>
+#include <unistd.h>
+#include <cstring>
 
 Epoller::Epoller()
     : epollFd_(::epoll_create1(EPOLL_CLOEXEC)),
@@ -17,12 +19,12 @@ Epoller::~Epoller() { ::close(epollFd_); }
 void Epoller::updateChannel(Channel* channel) {
     const int index = channel->index();
     if (index == Channel::kNew || index == Channel::kDeleted) {
-        // New or deleted channel -> ADD
+        // new or deleted channel -> ADD
         int fd = channel->fd();
         channel->set_index(Channel::kAdded);
         update(EPOLL_CTL_ADD, channel);
     } else {
-        // Existing channel -> MOD
+        // existing channel -> MOD
         int fd = channel->fd();
         (void)fd;
         if (channel->isNoneEvent()) {
@@ -49,7 +51,7 @@ int Epoller::poll(int timeoutMs, ChannelList* activeChannels) {
     int savedErrno = errno;
     if (numEvents > 0) {
         fillActiveChannels(numEvents, activeChannels);
-        // Dynamic resize: if event list full, double next time
+        // dynamic growth: double the event list once it fills up
         if (static_cast<size_t>(numEvents) == events_.size()) {
             events_.resize(events_.size() * 2);
         }

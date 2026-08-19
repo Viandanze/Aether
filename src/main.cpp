@@ -1,62 +1,79 @@
 #include "net/EventLoop.h"
+#include "net/Channel.h"
 #include "net/InetAddress.h"
 #include "http/HttpServer.h"
+#include "http/FileCache.h"
 #include "base/Logger.h"
-#include <atomic>
-#include <climits>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <atomic>
 #include <string>
 #include <fstream>
 #include <sys/stat.h>
+#include <sys/eventfd.h>
+#include <unistd.h>
 
-// ─── Global variables (for signal handling)───
-std::atomic<bool> g_running{false};
+// --- globals (for signal handling) ---
 EventLoop* g_loop = nullptr;
 HttpServer* g_server = nullptr;
+static int g_shutdownFd = -1;                    // SIGINT writes to this eventfd to wake the main loop
+static std::atomic<bool> g_shuttingDown{false};  // guards graceful shutdown against re-entry
 
-// ─── Signal handling: graceful Close ───
-void installSignalHandlers() {
-    ::signal(SIGPIPE, SIG_IGN);  // Ignore SIGPIPE (writing to closed socket)
+// --- graceful shutdown (runs in normal context on the main loop thread) ---
+static void startGracefulShutdown() {
+    // second shutdown signal: the user is impatient, exit immediately
+    if (g_shuttingDown.load()) {
+        LOG_WARN("Second shutdown signal, exiting immediately");
+        ::_exit(130);
+    }
+    g_shuttingDown.store(true);
 
-    // SIGINT/SIGTERM: graceful Close
-    auto handler = [](int sig) {
-        if (!g_running.load(std::memory_order_relaxed)) {
-            // Server not fully started yet, ignore signal
-            return;
+    LOG_INFO("Starting graceful shutdown: stop accepting, drain connections...");
+    g_server->getTcpServer()->stopAccepting();
+
+    // no live connections, exit now
+    if (g_server->getTcpServer()->connectionCount() == 0) {
+        g_loop->quit();
+        return;
+    }
+
+    // wait up to 5s for in-flight requests, then force-close what remains
+    g_loop->runAfter(5.0, []() {
+        int remaining = g_server->getTcpServer()->connectionCount();
+        if (remaining > 0) {
+            LOG_WARN("Graceful shutdown timeout, force closing %d connections", remaining);
+            g_server->getTcpServer()->forceCloseAll();
+            g_loop->runAfter(0.5, []() { g_loop->quit(); });
+        } else {
+            g_loop->quit();
         }
-        LOG_INFO("Received signal %d, starting graceful shutdown...", sig);
-        if (g_server && g_loop) {
-            // Stop accepting new connections
-            g_server->getTcpServer()->stopAccepting();
+    });
+}
 
-            // If no active connections, quit immediately
-            if (g_server->getTcpServer()->connectionCount() == 0) {
-                g_loop->queueInLoop([]() { g_loop->quit(); });
-                return;
-            }
+// --- signal handling ---
+// Only async-signal-safe functions may run inside a signal handler.
+// The old handler called stopAccepting/runAfter directly (both touch mutexes and logging);
+// if the signal interrupted a path holding that same lock (TimerQueue/Logger), the process
+// self-deadlocked (seen as no response after SIGINT, needing a 60s kill -9). Fix: the handler
+// now only write(2)s an eventfd; the main loop wakes up and runs the full shutdown sequence in normal context.
+void installSignalHandlers() {
+    ::signal(SIGPIPE, SIG_IGN);  // ignore SIGPIPE (write to a closed socket)
 
-            // Wait 5 seconds to let connections finish
-            g_loop->runAfter(5.0, []() {
-                int remaining = g_server->getTcpServer()->connectionCount();
-                if (remaining > 0) {
-                    LOG_WARN("Graceful shutdown timeout, force closing %d connections", remaining);
-                    g_server->getTcpServer()->forceCloseAll();
-                    g_loop->runAfter(0.5, []() { g_loop->quit(); });
-                } else {
-                    g_loop->quit();
-                }
-            });
+    auto handler = [](int) {
+        // async-signal-safe: write(2) only
+        if (g_shutdownFd >= 0) {
+            uint64_t one = 1;
+            ssize_t n = ::write(g_shutdownFd, &one, sizeof(one));
+            (void)n;
         }
     };
-
     ::signal(SIGINT, handler);
     ::signal(SIGTERM, handler);
 }
 
-// ─── MIME type detection ───
+// --- MIME type detection ---
 std::string getMimeType(const std::string& path) {
     auto dot = path.rfind('.');
     if (dot == std::string::npos) return "application/octet-stream";
@@ -79,21 +96,16 @@ std::string getMimeType(const std::string& path) {
     return "application/octet-stream";
 }
 
-// ─── Path safety check ───
+// --- path safety check ---
 bool isPathSafe(const std::string& path) {
-    // Block path traversal attacks
-    // Check for ".." in URL path components
+    // block path traversal attacks
     if (path.find("..") != std::string::npos) return false;
-    // Block null bytes and control characters
-    for (char c : path) {
-        if (c <= 0x1f || c == 0x7f) return false;
-    }
     return true;
 }
 
-// ─── HTTP request handling ───
+// --- HTTP request handling ---
 void onRequest(const HttpRequest& req, HttpResponse* resp) {
-    // Only support GET/HEAD/POST
+    // only GET/HEAD/POST are supported
     auto method = req.method();
     if (method != HttpRequest::kGet &&
         method != HttpRequest::kHead &&
@@ -104,7 +116,7 @@ void onRequest(const HttpRequest& req, HttpResponse* resp) {
 
     const std::string& path = req.path();
 
-    // Built-in API
+    // built-in API
     if (path == "/api/status") {
         resp->setStatusCode(HttpResponse::k200Ok);
         resp->setStatusMessage("OK");
@@ -123,52 +135,13 @@ void onRequest(const HttpRequest& req, HttpResponse* resp) {
         return;
     }
 
-    // Static file serving (GET/HEAD)
+    // static file serving (GET/HEAD): via FileCache (LRU + mtime/size validation + ETag/304)
     if (!isPathSafe(path)) {
         *resp = HttpResponse::forbidden();
         return;
     }
 
-    std::string serveDir = "./www";
-    std::string filePath = serveDir + (path == "/" ? "/index.html" : path);
-
-    struct stat st;
-    if (::stat(filePath.c_str(), &st) != 0 || S_ISDIR(st.st_mode)) {
-        *resp = HttpResponse::notFound();
-        return;
-    }
-
-    // Verify resolved path is within serve directory (defend against symlinks/encoding)
-    char realPathBuf[PATH_MAX];
-    if (::realpath(filePath.c_str(), realPathBuf) != nullptr) {
-        char realDirBuf[PATH_MAX];
-        if (::realpath(serveDir.c_str(), realDirBuf) != nullptr) {
-            std::string resolvedFile(realPathBuf);
-            std::string resolvedDir(realDirBuf);
-            if (resolvedFile.find(resolvedDir + "/") != 0 && resolvedFile != resolvedDir) {
-                *resp = HttpResponse::forbidden();
-                return;
-            }
-        }
-    }
-
-    // Read file
-    std::ifstream file(filePath, std::ios::binary);
-    if (!file.is_open()) {
-        *resp = HttpResponse::notFound();
-        return;
-    }
-
-    std::string body((std::istreambuf_iterator<char>(file)),
-                      std::istreambuf_iterator<char>());
-
-    resp->setStatusCode(HttpResponse::k200Ok);
-    resp->setStatusMessage("OK");
-    resp->setContentType(getMimeType(filePath));
-    if (method == HttpRequest::kGet) {
-        resp->setBody(std::move(body));
-    }
-    // HEAD request: return headers only, no body
+    FileCache::instance().serve(req, resp);
 }
 
 int main(int argc, char* argv[]) {
@@ -212,7 +185,7 @@ int main(int argc, char* argv[]) {
             printf("  -h             Show this help\n");
             return 0;
         } else {
-            // Compatible with legacy positional args
+            // legacy positional arguments
             static int posArg = 0;
             switch (posArg) {
                 case 0: port = static_cast<uint16_t>(atoi(argv[i])); break;
@@ -223,10 +196,13 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // ─── Enable async logging ───
+    // --- enable async logging ---
     if (asyncLog) {
         Logger::instance().enableAsync();
     }
+
+    // --- static file cache (the -d option takes effect here) ---
+    FileCache::instance().init(serveDir);
 
     LOG_INFO("════════════════════════════════════════════════");
     LOG_INFO("  Aether HTTP Server v0.5");
@@ -238,9 +214,22 @@ int main(int argc, char* argv[]) {
     LOG_INFO("  Async logging: %s", asyncLog ? "ON" : "OFF");
     LOG_INFO("════════════════════════════════════════════════");
 
-    // ─── Create server ───
+    // --- create the server ---
     EventLoop loop;
     g_loop = &loop;
+
+    // graceful shutdown signal channel: the handler writes an eventfd (async-signal-safe),
+    // the main loop reads it and runs the shutdown sequence in normal context.
+    // Declaration order guarantees: server destructs first (joins IO threads), shutdownChannel destructs before loop.
+    g_shutdownFd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    Channel shutdownChannel(&loop, g_shutdownFd);
+    shutdownChannel.setReadCallback([]() {
+        uint64_t n;
+        while (::read(g_shutdownFd, &n, sizeof(n)) == sizeof(n)) {}
+        startGracefulShutdown();
+    });
+    shutdownChannel.enableReading();
+
     installSignalHandlers();
 
     InetAddress listenAddr(port);
@@ -261,11 +250,9 @@ int main(int argc, char* argv[]) {
     server.start();
 
     LOG_INFO("Server running. Press Ctrl+C for graceful shutdown.");
-    g_running.store(true, std::memory_order_release);
     loop.loop();
 
     LOG_INFO("Event loop exited, server shutdown complete.");
-    g_running.store(false, std::memory_order_release);
     g_loop = nullptr;
     g_server = nullptr;
 

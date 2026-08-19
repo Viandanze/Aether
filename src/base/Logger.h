@@ -1,10 +1,12 @@
+#ifndef AETHER_BASE_LOGGER_H
+#define AETHER_BASE_LOGGER_H
 #pragma once
 #include <string>
 #include <cstdio>
 #include <cstdarg>
 #include <mutex>
 
-// Log levels
+// log levels
 enum class LogLevel {
     DEBUG,
     INFO,
@@ -14,17 +16,17 @@ enum class LogLevel {
 };
 
 // Logger: logging interface
-// Default sync to stderr, switchable to async mode (file output)
+// Default: sync writes to stderr; can switch to async mode (file output)
 class Logger {
 public:
     static Logger& instance();
     void setLevel(LogLevel level);
     void log(LogLevel level, const char* file, int line, const char* fmt, ...);
 
-    // Enable async logging (file output)
+    // enable async logging (write to file)
     void enableAsync(const std::string& logFile = "./aether.log");
 
-    // Get current log levels
+    // get current log level
     LogLevel level() const { return level_; }
 
 private:
@@ -40,3 +42,4 @@ private:
 #define LOG_WARN(...)  Logger::instance().log(LogLevel::WARN,  __FILE__, __LINE__, __VA_ARGS__)
 #define LOG_ERROR(...) Logger::instance().log(LogLevel::ERROR, __FILE__, __LINE__, __VA_ARGS__)
 #define LOG_FATAL(...) Logger::instance().log(LogLevel::FATAL, __FILE__, __LINE__, __VA_ARGS__)
+#endif // AETHER_BASE_LOGGER_H

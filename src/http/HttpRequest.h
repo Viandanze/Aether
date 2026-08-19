@@ -1,9 +1,11 @@
+#ifndef AETHER_HTTP_HTTPREQUEST_H
+#define AETHER_HTTP_HTTPREQUEST_H
 #pragma once
 #include <string>
 #include <unordered_map>
 #include <algorithm>
 
-// HttpRequest: parsed HTTP request result
+// HttpRequest: parsed HTTP request
 class HttpRequest {
 public:
     enum Method { kInvalid, kGet, kPost, kHead, kPut, kDelete };
@@ -66,21 +68,21 @@ public:
         return 0;
     }
 
-    // --- Convenience methods ---
+    // --- convenience methods ---
+    bool isKeepAlive() const {
+        if (version_ == kHttp10) {
+            return getHeader("Connection") == "keep-alive";
+        }
+        // HTTP/1.1 defaults to keep-alive
+        return getHeader("Connection") != "close";
+    }
+
     bool hasBodyExpected() const {
         // POST, PUT methods expect a body
         return method_ == kPost || method_ == kPut;
     }
 
-    bool isKeepAlive() const {
-        if (version_ == kHttp10) {
-            return getHeader("Connection") == "keep-alive";
-        }
-        // HTTP/1.1 default keep-alive
-        return getHeader("Connection") != "close";
-    }
-
-    // --- Debug ---
+    // --- debugging ---
     std::string dump() const;
 
 private:
@@ -91,3 +93,4 @@ private:
     std::unordered_map<std::string, std::string> headers_;
     std::string body_;
 };
+#endif // AETHER_HTTP_HTTPREQUEST_H

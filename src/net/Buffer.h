@@ -1,3 +1,5 @@
+#ifndef AETHER_NET_BUFFER_H
+#define AETHER_NET_BUFFER_H
 #pragma once
 #include <vector>
 #include <string>
@@ -18,10 +20,10 @@
 /// +-------------------+------------------+------------------+
 /// 0      <=      readerIndex   <=   writerIndex    <=     size
 ///
-/// Design inspired by muduo::net::Buffer:
-/// - readv + stack extrabuf, maximize data per syscall
-/// - Auto-grow internally, reclaimable via shrink() when idle
-/// - Support prepend for protocol header prepending
+/// Design follows muduo::net::Buffer:
+/// - readv with an on-stack extrabuf reads as much as possible per syscall
+/// - Grows automatically; shrink() reclaims idle space
+/// - Supports prepend, e.g. for protocol headers
 class Buffer {
 public:
     static const size_t kCheapPrepend = 8;
@@ -39,13 +41,13 @@ public:
         std::swap(writerIndex_, rhs.writerIndex_);
     }
 
-    // ─── Capacity queries ───
+    // --- capacity queries ---
     size_t readableBytes()  const { return writerIndex_ - readerIndex_; }
     size_t writableBytes()  const { return buffer_.size() - writerIndex_; }
     size_t prependableBytes() const { return readerIndex_; }
     size_t internalCapacity() const { return buffer_.capacity(); }
 
-    // ─── Read end ───
+    // --- read side ---
     const char* peek() const { return begin() + readerIndex_; }
     char* peek() { return begin() + readerIndex_; }
 
@@ -92,7 +94,7 @@ public:
         return retrieveAsString(readableBytes());
     }
 
-    // ─── Write end ───
+    // --- write side ---
     void append(const char* data, size_t len) {
         ensureWritableBytes(len);
         std::copy(data, data + len, beginWrite());
@@ -127,7 +129,7 @@ public:
         writerIndex_ -= len;
     }
 
-    // ─── Prepend ───
+    // --- prepend ---
     void prepend(const void* data, size_t len) {
         assert(len <= prependableBytes());
         readerIndex_ -= len;
@@ -140,9 +142,9 @@ public:
         prepend(&be32, sizeof(be32));
     }
 
-    // ─── Read data from fd (readv + stack extrabuf)───
+    // --- read from fd (readv + on-stack extrabuf) ---
     ssize_t readFd(int fd, int* savedErrno) {
-        // Stack buffer: use extrabuf for overflow when writable space is insufficient
+        // on-stack buffer: when writable space runs out, extrabuf catches the overflow
         char extrabuf[65536];
         struct iovec vec[2];
         const size_t writable = writableBytes();
@@ -152,17 +154,17 @@ public:
         vec[1].iov_base = extrabuf;
         vec[1].iov_len = sizeof(extrabuf);
 
-        // If Buffer writable space sufficient, only use vec[0]
+        // if writable space is enough, use vec[0] only
         const int iovcnt = (writable < sizeof(extrabuf)) ? 2 : 1;
         const ssize_t n = ::readv(fd, vec, iovcnt);
 
         if (n < 0) {
             *savedErrno = errno;
         } else if (static_cast<size_t>(n) <= writable) {
-            // All data falls in Buffer writable area
+            // all data landed in the buffer's writable area
             writerIndex_ += n;
         } else {
-            // Buffer writable area insufficient, extrabuf also received data
+            // writable area was short; extrabuf caught some data too
             writerIndex_ = buffer_.size();
             append(extrabuf, static_cast<size_t>(n) - writable);
         }
@@ -170,7 +172,7 @@ public:
         return n;
     }
 
-    // ─── Shrink idle space ───
+    // --- shrink idle space ---
     void shrink(size_t reserve = 0) {
         Buffer other;
         other.ensureWritableBytes(readableBytes() + reserve);
@@ -184,10 +186,10 @@ private:
 
     void makeSpace(size_t len) {
         if (writableBytes() + prependableBytes() < len + kCheapPrepend) {
-            // Overall space insufficient, grow
+            // not enough total space, grow
             buffer_.resize(writerIndex_ + len);
         } else {
-            // Overall space sufficient, shift readable data forward
+            // enough total space, move readable data forward
             size_t readable = readableBytes();
             std::copy(begin() + readerIndex_,
                       begin() + writerIndex_,
@@ -205,3 +207,4 @@ private:
 };
 
 inline const char Buffer::kCRLF[] = "\r\n";
+#endif // AETHER_NET_BUFFER_H

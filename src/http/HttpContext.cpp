@@ -15,14 +15,14 @@ bool HttpContext::parseRequest(Buffer* buf) {
 
     while (pos < len) {
         if (state_ == kExpectRequestLine || state_ == kExpectHeaders) {
-            // Find \r\n (use std::search instead of GNU extension memmem)
+            // find \r\n (std::search instead of the GNU-only memmem)
             const char* searchStart = bufData + pos;
             size_t searchLen = len - pos;
             const char* crlf = std::search(searchStart, searchStart + searchLen,
                                            kCRLF, kCRLF + 2);
 
             if (crlf == nullptr) {
-                break;  // Incomplete line, wait for more data
+                break;  // incomplete line, wait for more data
             }
 
             size_t lineLen = static_cast<size_t>(crlf - (bufData + pos));
@@ -45,11 +45,6 @@ bool HttpContext::parseRequest(Buffer* buf) {
                         size_t bodyLen = request_.contentLength();
                         if (bodyLen > 0) {
                             state_ = kExpectBody;
-                        } else if (request_.hasBodyExpected()) {
-                            // POST/PUT/DELETE without Content-Length or chunked
-                            LOG_ERROR("HttpContext: %s request with no Content-Length or Transfer-Encoding",
-                                      request_.methodString());
-                            return false;
                         } else {
                             state_ = kGotComplete;
                         }
@@ -160,7 +155,7 @@ bool HttpContext::processRequestLine(std::string_view line) {
     auto sp2 = std::find(sp1 + 1, line.end(), ' ');
     if (sp2 == line.end()) return false;
 
-    std::string_view methodStr(line.begin(), sp1);
+    std::string_view methodStr = line.substr(0, static_cast<size_t>(sp1 - line.begin()));
     HttpRequest::Method method = HttpRequest::kInvalid;
     if (methodStr == "GET")          method = HttpRequest::kGet;
     else if (methodStr == "POST")    method = HttpRequest::kPost;
@@ -175,7 +170,9 @@ bool HttpContext::processRequestLine(std::string_view line) {
     }
     request_.setMethod(method);
 
-    std::string_view url(sp1 + 1, sp2);
+    std::string_view url = line.substr(
+        static_cast<size_t>(sp1 + 1 - line.begin()),
+        static_cast<size_t>(sp2 - sp1 - 1));
     auto questionMark = std::find(url.begin(), url.end(), '?');
     if (questionMark != url.end()) {
         request_.setPath(std::string(url.begin(), questionMark));
@@ -184,7 +181,7 @@ bool HttpContext::processRequestLine(std::string_view line) {
         request_.setPath(std::string(url));
     }
 
-    std::string_view version(sp2 + 1, line.end());
+    std::string_view version = line.substr(static_cast<size_t>(sp2 + 1 - line.begin()));
     if (version == "HTTP/1.1") {
         request_.setVersion(HttpRequest::kHttp11);
     } else if (version == "HTTP/1.0") {
@@ -200,10 +197,10 @@ bool HttpContext::processRequestLine(std::string_view line) {
 
 bool HttpContext::processChunkSize(std::string_view line) {
     // "1a\r\n" or "0\r\n"
-    // chunk-size may have semicolon-separated extensions, only take numeric part
+    // chunk-size may carry extensions after ';'; keep only the numeric part
     auto semi = std::find(line.begin(), line.end(), ';');
     std::string_view sizeStr = (semi != line.end())
-        ? std::string_view(line.begin(), semi)
+        ? line.substr(0, static_cast<size_t>(semi - line.begin()))
         : line;
 
     try {

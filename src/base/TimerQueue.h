@@ -1,3 +1,5 @@
+#ifndef AETHER_BASE_TIMERQUEUE_H
+#define AETHER_BASE_TIMERQUEUE_H
 #pragma once
 #include <set>
 #include <vector>
@@ -12,24 +14,24 @@ class Channel;
 
 // TimerQueue: timer queue based on timerfd + epoll
 // 
-// Design points:
-// 1. Use timerfd to integrate timer events into epoll event loop
-// 2. Use std::set to manage timers, sorted by expiration
-// 3. Only set timerfd to earliest expiration
+// Design notes:
+// 1. Use timerfd to integrate timer events into the epoll loop
+// 2. Manage timers in a std::set ordered by expiration
+// 3. Always arm timerfd with the earliest expiration only
 // 4. Support one-shot and repeating timers
 class TimerQueue : noncopyable {
 public:
     explicit TimerQueue(EventLoop* loop);
     ~TimerQueue();
 
-    // Schedule callback at specified time (one-shot)
+    // run callback at the given time (one-shot)
     TimerId addTimer(Timer::TimerCallback cb, TimeStamp when, double interval = 0.0);
 
-    // Cancel timer
+    // cancel a timer
     void cancel(TimerId timerId);
 
 private:
-    // Use pair<TimeStamp, Timer*> as set key for uniqueness
+    // pair<TimeStamp, Timer*> as the set key guarantees uniqueness
     using Entry = std::pair<TimeStamp, Timer*>;
     using TimerList = std::set<Entry>;
     using ActiveTimer = std::pair<Timer*, int64_t>;  // Timer* + sequence
@@ -41,10 +43,10 @@ private:
     // timerfd readable callback
     void handleRead();
 
-    // Get all expired timers
+    // get all expired timers
     std::vector<Entry> getExpired(TimeStamp now);
 
-    // Reset repeating timers and update timerfd
+    // reset repeating timers and update timerfd
     void reset(const std::vector<Entry>& expired, TimeStamp now);
 
     bool insert(Timer* timer);
@@ -59,5 +61,6 @@ private:
     // Active timer set for cancel
     ActiveTimerSet activeTimers_;
     bool callingExpiredTimers_;
-    ActiveTimerSet cancelingTimers_;  // Pending cancel list for timers being executed
+    ActiveTimerSet cancelingTimers_;  // timers pending cancellation while callbacks are running
 };
+#endif // AETHER_BASE_TIMERQUEUE_H
