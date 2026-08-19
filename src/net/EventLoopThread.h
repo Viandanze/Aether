@@ -1,3 +1,5 @@
+#ifndef AETHER_NET_EVENTLOOPTHREAD_H
+#define AETHER_NET_EVENTLOOPTHREAD_H
 #pragma once
 #include <functional>
 #include <mutex>
@@ -7,8 +9,8 @@
 
 class EventLoop;
 
-// EventLoopThread: wraps an IO thread + its owned EventLoop
-// Waits for EventLoop creation before returning, ensuring thread safety
+// EventLoopThread: an IO thread plus the EventLoop it owns
+// startLoop() waits until the EventLoop is created, making it thread-safe
 class EventLoopThread : noncopyable {
 public:
     using ThreadInitCallback = std::function<void(EventLoop*)>;
@@ -17,16 +19,17 @@ public:
                     const std::string& name = std::string());
     ~EventLoopThread();
 
-    EventLoop* startLoop();  // Start thread and return its EventLoop
+    EventLoop* startLoop();  // start the thread and return its EventLoop
 
 private:
-    void threadFunc();  // Thread entry function
+    void threadFunc();  // thread entry function
 
-    EventLoop* loop_;  // EventLoop created by thread (raw pointer, lifecycle managed by thread)
+    EventLoop* loop_;  // the loop created in this thread (raw pointer; lifetime owned by the thread)
     bool exiting_;
     std::string name_;
     std::thread thread_;
     std::mutex mtx_;
     std::condition_variable cond_;
-    ThreadInitCallback callback_;  // Thread initialization callback
+    ThreadInitCallback callback_;  // thread init callback
 };
+#endif // AETHER_NET_EVENTLOOPTHREAD_H

@@ -122,7 +122,7 @@ bool EventLoop::isInLoopThread() const {
     return threadId_ == std::this_thread::get_id();
 }
 
-// ─── Timer interface ───
+// --- timer interface ---
 
 TimerId EventLoop::runAt(TimeStamp time, Timer::TimerCallback cb) {
     return timerQueue_->addTimer(std::move(cb), time, 0.0);
@@ -155,5 +155,4 @@ void EventLoop::insertToWheel(const std::shared_ptr<TcpConnection>& conn) {
     if (timerWheel_) {
         timerWheel_->insert(conn);
     }
-    // If timerWheel_ is null, idle timeout was not configured - this is normal, no warning needed
 }

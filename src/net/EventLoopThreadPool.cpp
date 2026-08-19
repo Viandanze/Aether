@@ -11,7 +11,7 @@ EventLoopThreadPool::EventLoopThreadPool(EventLoop* baseLoop, const std::string&
       next_(0) {}
 
 EventLoopThreadPool::~EventLoopThreadPool() {
-    // unique_ptrs in threads_ auto-destroy; EventLoopThread destructor does quit + join
+    // unique_ptrs in threads_ destruct automatically; EventLoopThread's dtor quits + joins
 }
 
 void EventLoopThreadPool::start(const ThreadInitCallback& cb) {
@@ -27,7 +27,7 @@ void EventLoopThreadPool::start(const ThreadInitCallback& cb) {
     }
 
     if (numThreads_ == 0 && cb) {
-        // Single Reactor mode, call init callback directly on baseLoop
+        // single-reactor mode: run the init callback directly on baseLoop
         cb(baseLoop_);
     }
 
@@ -36,13 +36,13 @@ void EventLoopThreadPool::start(const ThreadInitCallback& cb) {
 }
 
 EventLoop* EventLoopThreadPool::getNextLoop() {
-    // Single Reactor mode, all connections handled by main thread
+    // single-reactor mode: the main thread handles all connections
     if (loops_.empty()) {
         return baseLoop_;
     }
 
-    // Round-Robin: atomic increment modulo, thread-safe
-    // Reset periodically to prevent integer overflow
+    // round-robin: atomic increment + modulo, thread-safe
+    // wrap the counter so it never overflows
     int expected = next_.load();
     if (expected > 1000000) {
         next_.store(0);

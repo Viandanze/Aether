@@ -16,7 +16,7 @@ TimerWheel::~TimerWheel() {
 }
 
 void TimerWheel::start() {
-    // Tick once per second
+    // tick every 1 second
     tickTimerId_ = loop_->runEvery(1.0, [this]() { tick(); });
     LOG_INFO("TimerWheel started: timeout=%ds, slots=%zu", timeoutSeconds_, capacity_);
 }
@@ -26,7 +26,7 @@ void TimerWheel::stop() {
 }
 
 void TimerWheel::insert(const std::shared_ptr<TcpConnection>& conn) {
-    // Increment generation to invalidate old entries
+    // bump generation so older entries become stale
     uint64_t gen = ++conn->idleTimerGeneration();
     size_t slot = (current_ + static_cast<size_t>(timeoutSeconds_)) % capacity_;
     wheel_[slot].push_back({conn, gen});
@@ -39,13 +39,13 @@ void TimerWheel::tick() {
     for (auto& entry : slot) {
         auto conn = entry.conn.lock();
         if (conn && conn->idleTimerGeneration() == entry.generation) {
-            // Generation match -> no new activity since last insert -> idle timeout
+            // generation matches -> no activity since last insert -> idle timeout
             if (conn->connected()) {
                 LOG_INFO("TimerWheel: idle timeout, closing [%s]", conn->name().c_str());
                 conn->shutdown();
             }
         }
-        // else: expired entry (connection refreshed or destroyed), ignore
+        // else: stale entry (connection refreshed or destroyed), ignore
     }
 
     slot.clear();

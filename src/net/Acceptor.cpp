@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <cerrno>
+#include <cstring>
 
 Acceptor::Acceptor(EventLoop* loop, const InetAddress& listenAddr, bool reusePort)
     : loop_(loop),
@@ -41,7 +42,7 @@ void Acceptor::stopListening() {
 }
 
 void Acceptor::handleRead() {
-    // ET mode: must loop accept until EAGAIN or EMFILE
+    // drain the listen socket in a loop (works for both LT and ET)
     for (;;) {
         InetAddress peerAddr;
         int connFd = acceptSocket_->accept(&peerAddr);
@@ -52,20 +53,18 @@ void Acceptor::handleRead() {
                 ::close(connFd);
             }
         } else {
-            // accept failed - check why
             int savedErrno = errno;
             if (savedErrno == EMFILE) {
-                // Too many open files: accept and immediately close one
+                // fd exhausted: free the spare fd, take and drop one pending
+                // connection so the client sees a clean close, then re-arm
                 ::close(idleFd_);
                 idleFd_ = ::accept(acceptSocket_->fd(), nullptr, nullptr);
                 ::close(idleFd_);
                 idleFd_ = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
                 LOG_WARN("Acceptor: EMFILE hit, used idleFd trick");
             } else if (savedErrno == EAGAIN || savedErrno == EWOULDBLOCK) {
-                // All pending connections accepted in ET mode
-                break;
+                break;  // no more pending connections
             } else if (savedErrno == ECONNABORTED || savedErrno == EINTR) {
-                // Transient errors, retry
                 continue;
             } else {
                 LOG_ERROR("Acceptor::handleRead accept error: %s", strerror(savedErrno));

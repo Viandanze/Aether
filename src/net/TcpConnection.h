@@ -1,3 +1,5 @@
+#ifndef AETHER_NET_TCPCONNECTION_H
+#define AETHER_NET_TCPCONNECTION_H
 #pragma once
 #include <string>
 #include <memory>
@@ -6,16 +8,17 @@
 #include <cstdint>
 #include "base/noncopyable.h"
 #include "net/Buffer.h"
+#include "net/InetAddress.h"
 
 class EventLoop;
 class Socket;
 class Channel;
 class InetAddress;
 
-/// TcpConnection: manages an established TCP connection
+/// TcpConnection: manages one established TCP connection
 ///
-/// Lifecycle: Connecting -> Connected -> Disconnecting -> Disconnected
-/// Managed with shared_ptr to prevent destruction during callbacks
+/// Lifetime: Connecting -> Connected -> Disconnecting -> Disconnected
+/// Held by shared_ptr so the connection survives across callbacks
 class TcpConnection : noncopyable,
                       public std::enable_shared_from_this<TcpConnection> {
 public:
@@ -36,17 +39,21 @@ public:
     bool connected() const { return state_ == kConnected; }
     bool disconnected() const { return state_ == kDisconnected; }
 
-    // ─── Send ───
+    // --- sending ---
     void send(const std::string& message);
     void send(const char* data, size_t len);
-    void send(Buffer* buf);  // Zero-copy swap
+    void send(Buffer* buf);  // zero-copy swap
 
-    // ─── Close ───
-    void shutdown();       // Half-close (close write end after flushing pending data)
-    void forceClose();     // Immediate close
-    void forceCloseWithDelay(double seconds);  // Delayed force close
+    // zero-copy file send: push via sendfile(2); on EAGAIN pread the remainder into outputBuf_ and continue.
+    // this connection takes fd ownership (closes it when the send completes or the connection closes); the caller must not touch it again
+    void sendFile(int fileFd, off_t offset, size_t count);
 
-    // ─── Callbacks ───
+    // --- closing ---
+    void shutdown();       // half-close (close the write side after pending data drains)
+    void forceClose();     // close immediately
+    void forceCloseWithDelay(double seconds);  // force-close after a delay
+
+    // --- callback setup ---
     void setConnectionCallback(ConnectionCallback cb) { connectionCallback_ = std::move(cb); }
     void setMessageCallback(MessageCallback cb) { messageCallback_ = std::move(cb); }
     void setWriteCompleteCallback(WriteCompleteCallback cb) { writeCompleteCallback_ = std::move(cb); }
@@ -56,23 +63,23 @@ public:
         highWaterMark_ = highWaterMark;
     }
 
-    // ─── Context ───
+    // --- context ---
     void setContext(const std::any& ctx) { context_ = ctx; }
     const std::any& getContext() const { return context_; }
     std::any* getMutableContext() { return &context_; }
 
-    // ─── Buffer access ───
+    // --- buffer access ---
     Buffer* inputBuffer() { return &inputBuf_; }
     Buffer* outputBuffer() { return &outputBuf_; }
 
-    // ─── Idle timeout (for TimerWheel)───
+    // --- idle timeout (for TimerWheel) ---
     uint64_t idleTimerGeneration() const { return idleTimerGeneration_; }
     uint64_t& idleTimerGeneration() { return idleTimerGeneration_; }
 
-    // ─── TCP options ───
+    // --- TCP options ---
     void setTcpNoDelay(bool on);
 
-    // ─── Connection establish/destroy (internal)───
+    // --- connect/disconnect (internal) ---
     void connectEstablished();
     void connectDestroyed();
 
@@ -86,6 +93,7 @@ private:
     void handleError();
     void sendInLoop(const std::string& message);
     void sendInLoop(const char* data, size_t len);
+    void sendFileInLoop(int fileFd, off_t offset, size_t count);
     void shutdownInLoop();
     void forceCloseInLoop();
 
@@ -97,8 +105,8 @@ private:
     InetAddress localAddr_;
     InetAddress peerAddr_;
 
-    Buffer inputBuf_;   // Read buffer
-    Buffer outputBuf_;  // Write buffer
+    Buffer inputBuf_;   // input buffer
+    Buffer outputBuf_;  // output buffer
 
     ConnectionCallback connectionCallback_;
     MessageCallback messageCallback_;
@@ -107,7 +115,8 @@ private:
     HighWaterMarkCallback highWaterMarkCallback_;
     size_t highWaterMark_;
 
-    std::any context_;  // Connection-level context (e.g. HttpContext)
+    std::any context_;  // per-connection context (e.g. HttpContext)
 
-    uint64_t idleTimerGeneration_;  // For TimerWheel, incremented on refresh to invalidate old entries
+    uint64_t idleTimerGeneration_;  // for TimerWheel: bumped on every refresh so stale entries invalidate
 };
+#endif // AETHER_NET_TCPCONNECTION_H

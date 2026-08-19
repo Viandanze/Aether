@@ -1,5 +1,6 @@
 #include "HttpServer.h"
 #include "net/TcpConnection.h"
+#include "net/EventLoop.h"
 #include "base/Logger.h"
 
 HttpServer::HttpServer(EventLoop* loop, const InetAddress& listenAddr,
@@ -24,7 +25,7 @@ void HttpServer::onConnection(const std::shared_ptr<TcpConnection>& conn) {
         conn->setContext(HttpContext());
         LOG_INFO("HttpServer: new connection from %s", conn->peerAddr().toIpPort().c_str());
 
-        // Insert into TimerWheel on first access (if idle timeout configured)
+        // first insert into the TimerWheel (if idle timeout is configured)
         conn->getLoop()->insertToWheel(conn);
     } else {
         LOG_INFO("HttpServer: connection closed from %s", conn->peerAddr().toIpPort().c_str());
@@ -34,7 +35,7 @@ void HttpServer::onConnection(const std::shared_ptr<TcpConnection>& conn) {
 void HttpServer::onMessage(const std::shared_ptr<TcpConnection>& conn, Buffer* buf) {
     auto* ctx = std::any_cast<HttpContext>(conn->getMutableContext());
 
-    // HTTP Pipelining: loop to parse all requests in buffer
+    // HTTP pipelining: parse every request left in the buffer
     while (buf->readableBytes() > 0) {
         bool ok = ctx->parseRequest(buf);
         if (!ok) {
@@ -46,13 +47,13 @@ void HttpServer::onMessage(const std::shared_ptr<TcpConnection>& conn, Buffer* b
         if (ctx->gotComplete()) {
             onRequest(conn, ctx->request());
             ctx->reset();
-            // Continue parsing remaining requests in buffer (pipelining)
+            // keep parsing requests that may remain in the buffer (pipelining)
         } else {
-            break;  // Request incomplete, wait for more data
+            break;  // incomplete request, wait for more data
         }
     }
 
-    // Refresh idle timeout (connection is active)
+    // refresh the idle timer (connection is active)
     conn->getLoop()->insertToWheel(conn);
 }
 
@@ -66,6 +67,12 @@ void HttpServer::onRequest(const std::shared_ptr<TcpConnection>& conn, const Htt
 
     std::string output = resp.serialize();
     conn->send(output);
+
+    // zero-copy file body: headers are already queued; the body is pushed by sendfile(2)
+    // (fd ownership moves from resp to the connection)
+    if (resp.hasFileBody()) {
+        conn->sendFile(resp.takeFileFd(), resp.fileOffset(), resp.fileSize());
+    }
 
     if (resp.closeConnection()) {
         conn->shutdown();

@@ -6,6 +6,7 @@
 #include "TcpConnection.h"
 #include "base/Logger.h"
 #include <cstdio>
+#include <unistd.h>
 
 TcpServer::TcpServer(EventLoop* loop, const InetAddress& listenAddr, const std::string& name)
     : loop_(loop),
@@ -29,7 +30,7 @@ void TcpServer::setThreadNum(int numThreads) {
 void TcpServer::start() {
     threadPool_->start();
 
-    // If idle timeout configured, create TimerWheel on each EventLoop
+    // if idle timeout is configured, create a TimerWheel on every EventLoop
     if (idleTimeoutSeconds_ > 0) {
         auto loops = threadPool_->getAllLoops();
         for (auto* ioLoop : loops) {
@@ -45,7 +46,7 @@ void TcpServer::start() {
 }
 
 void TcpServer::newConnection(int fd, const InetAddress& peerAddr) {
-    // Connection count limit check
+    // connection count limit check
     if (maxConnections_ > 0 && static_cast<int>(connections_.size()) >= maxConnections_) {
         LOG_WARN("TcpServer: max connections %d reached, rejecting %s",
                  maxConnections_, peerAddr.toIpPort().c_str());
@@ -57,13 +58,13 @@ void TcpServer::newConnection(int fd, const InetAddress& peerAddr) {
     snprintf(buf, sizeof(buf), "-%d", connCount_++);
     std::string connName = name_ + buf;
 
-    // Get local address
+    // get local address
     struct sockaddr_in localAddr;
     socklen_t len = sizeof(localAddr);
     ::getsockname(fd, reinterpret_cast<sockaddr*>(&localAddr), &len);
     InetAddress local(localAddr);
 
-    // Round-Robin select IO thread
+    // round-robin IO thread selection
     EventLoop* ioLoop = threadPool_->getNextLoop();
 
     auto conn = std::make_shared<TcpConnection>(ioLoop, connName, fd, local, peerAddr);
@@ -75,7 +76,7 @@ void TcpServer::newConnection(int fd, const InetAddress& peerAddr) {
         removeConnection(c);
     });
 
-    // Complete connection establishment in IO thread
+    // finish connection setup in the IO thread
     ioLoop->runInLoop([conn]() { conn->connectEstablished(); });
 
     LOG_INFO("New connection [%s] from %s -> loop %p (total: %zu)",
@@ -84,7 +85,7 @@ void TcpServer::newConnection(int fd, const InetAddress& peerAddr) {
 }
 
 void TcpServer::removeConnection(const std::shared_ptr<TcpConnection>& conn) {
-    // Thread-safe: all connections_ ops must run in main EventLoop thread
+    // thread safety: every connections_ operation must run in the main EventLoop thread
     loop_->runInLoop([this, conn]() { removeConnectionInLoop(conn); });
 }
 
@@ -93,12 +94,12 @@ void TcpServer::removeConnectionInLoop(const std::shared_ptr<TcpConnection>& con
     size_t n = connections_.erase(conn->name());
     (void)n;
 
-    // Safely destroy in connection's owning IO thread
+    // destroy safely in the connection's own IO thread
     EventLoop* ioLoop = conn->getLoop();
     ioLoop->queueInLoop([conn]() { conn->connectDestroyed(); });
 }
 
-// ─── Graceful Close ───
+// --- graceful shutdown ---
 
 void TcpServer::stopAccepting() {
     loop_->runInLoop([this]() {

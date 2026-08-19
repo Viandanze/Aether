@@ -1,23 +1,26 @@
+#ifndef AETHER_NET_EVENTLOOP_H
+#define AETHER_NET_EVENTLOOP_H
 #pragma once
 #include <atomic>
 #include <functional>
 #include <mutex>
+#include <thread>
 #include <vector>
 #include <memory>
-#include <thread>
 #include "base/noncopyable.h"
 #include "base/TimeStamp.h"
 #include "base/TimerId.h"
+#include "base/Logger.h"
 
 class Epoller;
 class Channel;
 class TimerQueue;
 class TimerWheel;
 
-/// EventLoop: one event loop per thread
+/// EventLoop: the event loop, one per thread
 ///
-/// Core duties: poll -> dispatch to Channel -> run timers -> handle cross-thread tasks
-/// Integrates TimerWheel for idle connection timeout management
+/// Core duty: poll for events -> dispatch to Channels -> run timers -> run queued cross-thread tasks
+/// Integrates TimerWheel for idle-connection timeout management
 class EventLoop : noncopyable {
 public:
     using Functor = std::function<void()>;
@@ -32,7 +35,7 @@ public:
     void updateChannel(Channel* channel);
     void removeChannel(Channel* channel);
 
-    // Cross-thread task dispatch
+    // cross-thread task queuing
     void runInLoop(Functor cb);
     void queueInLoop(Functor cb);
     void wakeup();
@@ -45,13 +48,13 @@ public:
         }
     }
 
-    // ─── Timer interface ───
+    // --- timer interface ---
     TimerId runAt(TimeStamp time, Timer::TimerCallback cb);
     TimerId runAfter(double delay, Timer::TimerCallback cb);
     TimerId runEvery(double interval, Timer::TimerCallback cb);
     void cancel(TimerId timerId);
 
-    // ─── TimerWheel (idle timeout) ───
+    // --- TimerWheel (idle timeout) ---
     void setIdleTimeout(int seconds);
     void insertToWheel(const std::shared_ptr<class TcpConnection>& conn);
 
@@ -76,3 +79,4 @@ private:
     std::vector<Functor> pendingFunctors_;
     std::atomic_bool callingPendingFunctors_;
 };
+#endif // AETHER_NET_EVENTLOOP_H

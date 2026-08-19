@@ -36,6 +36,8 @@ High-performance HTTP server built with C++17, featuring a master-slave Reactor 
 - **Graceful Shutdown**: SIGINT → stop accepting → drain connections → force close
 - **High Water Mark**: Callback when output buffer exceeds threshold
 - **Static File Server**: MIME type detection, path traversal protection
+- **FileCache**: LRU in-memory file cache with mtime+size validation, ETag / If-None-Match 304 support, large-file bypass (>4MB not cached), 64MB total cap
+- **sendfile(2) Zero-Copy**: Large files (>4MB) streamed directly from page cache to socket via `sendfile(2)` — no user-space copy; fd lifetime scoped inside the send function (no member state, no leak on mid-transfer disconnect); EAGAIN fallback to `pread` + output buffer; HEAD requests report true Content-Length (RFC 9110)
 - **POST Support**: Request body parsing with Content-Length and chunked encoding
 - **Built-in API**: `/api/status` endpoint for server health checks
 - **Thread-Safe**: Cross-thread task dispatch via `runInLoop()` + `eventfd` wakeup
@@ -82,6 +84,9 @@ make -j$(nproc)
 ## Test
 
 ```bash
+# Unit tests (148 assertions across 5 suites)
+cd test && make && make test
+
 # Basic GET request
 curl http://localhost:8080/
 
@@ -124,14 +129,48 @@ src/
 │   ├── Channel.h/.cpp          # Event dispatcher per fd
 │   ├── Acceptor.h/.cpp         # New connection acceptor
 │   ├── TcpServer.h/.cpp        # TCP server + graceful shutdown
-│   ├── TcpConnection.h/.cpp    # TCP connection + Buffer + high water mark
+│   ├── TcpConnection.h/.cpp    # TCP connection + Buffer + high water mark + sendfile
 │   ├── EventLoopThread.h/.cpp  # IO thread wrapper
 │   ├── EventLoopThreadPool.h/.cpp  # Sub-reactor thread pool
 │   ├── InetAddress.h/.cpp      # Socket address wrapper
 │   └── Socket.h/.cpp           # RAII socket
 └── http/
     ├── HttpRequest.h/.cpp      # HTTP request struct
-    ├── HttpResponse.h/.cpp     # HTTP response builder
+    ├── HttpResponse.h/.cpp     # HTTP response builder (+ zero-copy file body)
     ├── HttpContext.h/.cpp      # HTTP parse state machine (chunked + Buffer)
-    └── HttpServer.h/.cpp       # HTTP server + pipelining
+    ├── HttpServer.h/.cpp       # HTTP server + pipelining
+    └── FileCache.h             # LRU static file cache (mtime+size validation, ETag/304)
 ```
+
+## Benchmark
+
+wrk 4.1.0, Ubuntu 22.04, g++ 11 `-O2` Release. **Single vCPU sandbox** — server
+and load generator share one core, so absolute numbers are for engineering
+judgement, not headline claims.
+
+| Scenario (10s, keep-alive) | Before FileCache | After FileCache | Gain |
+|----------------------------|-----------------:|----------------:|-----:|
+| GET `/` (1850B), 2 threads, c50 | 170.62 QPS | 99,108.38 QPS | 581× |
+| GET `/` (1850B), 1 reactor, c50 | 88.66 QPS | 100,008.77 QPS | 1,128× |
+| GET `/api/status`, 2 threads, c50 | 109,581.86 QPS | 125,918.59 QPS | +15% |
+
+Post-optimization latency (2 IO threads, c50): `GET /` P50 536µs / P99 1.47ms;
+`/api/status` P50 380µs / P99 785µs. Zero socket errors after optimization
+(before: 21–85 errors per scenario). Root cause of the gap: every static-file
+request previously hit the filesystem (stat + open + read + close); FileCache
+serves hot files from memory with mtime+size freshness checks.
+
+Large-file path (8MB file, single vCPU sandbox):
+
+| Metric | FileCache bypass (pread) | sendfile(2) zero-copy | Gain |
+|--------|-------------------------:|----------------------:|-----:|
+| Single-stream throughput (best of 3) | 141 MB/s | 218 MB/s | +55% |
+| Sustained, 50 concurrent (wrk t2 c50) | — | 161.7 MB/s | — |
+| Small-file / API QPS regression | — | none (99k / 126k, flat) | — |
+
+sendfile eliminates two user-space copies (page cache → user buffer → socket
+buffer) and one context-switch-heavy `write()` on the hot path; verification
+covered md5 integrity, HEAD/304/404 semantics, keep-alive reuse across a
+sendfile transfer, Connection:close ordering, 4-way concurrent downloads, and
+mid-transfer client disconnect storms (EPIPE handled, zero fd leaks,
+114/114 connections cleaned up).

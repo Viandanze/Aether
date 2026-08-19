@@ -1,3 +1,5 @@
+#ifndef AETHER_NET_ACCEPTOR_H
+#define AETHER_NET_ACCEPTOR_H
 #pragma once
 #include <functional>
 #include <memory>
@@ -8,7 +10,7 @@ class InetAddress;
 class Socket;
 class Channel;
 
-/// Acceptor: listen on port, accept new connections
+/// Acceptor: listens on a port and accepts new connections
 class Acceptor : noncopyable {
 public:
     using NewConnectionCallback = std::function<void(int fd, const InetAddress&)>;
@@ -22,7 +24,7 @@ public:
 
     void listen();
     bool listening() const { return listening_; }
-    void stopListening();  // Stop listening (for graceful shutdown)
+    void stopListening();  // stop listening (for graceful shutdown)
 
 private:
     void handleRead();
@@ -32,5 +34,6 @@ private:
     std::unique_ptr<Channel> acceptChannel_;
     NewConnectionCallback newConnectionCallback_;
     bool listening_;
-    int idleFd_;  // Idle fd for handling EMFILE (fd exhaustion)
+    int idleFd_;  // spare fd for handling EMFILE (fd exhaustion)
 };
+#endif // AETHER_NET_ACCEPTOR_H

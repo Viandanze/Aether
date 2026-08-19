@@ -1,5 +1,7 @@
+#ifndef AETHER_BASE_NONCOPYABLE_H
+#define AETHER_BASE_NONCOPYABLE_H
 #pragma once
-// Non-copyable base class, similar to muduo's noncopyable
+// Base class that disables copying, similar to muduo's noncopyable
 class noncopyable {
 public:
     noncopyable() = default;
@@ -7,3 +9,4 @@ public:
     noncopyable(const noncopyable&) = delete;
     noncopyable& operator=(const noncopyable&) = delete;
 };
+#endif // AETHER_BASE_NONCOPYABLE_H

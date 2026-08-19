@@ -34,7 +34,7 @@ void Channel::handleEvent() {
 }
 
 void Channel::update() {
-    // Update epoll events via EventLoop
+    // update epoll events via the EventLoop
     loop_->updateChannel(this);
 }
 

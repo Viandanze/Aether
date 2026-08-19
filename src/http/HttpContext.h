@@ -1,18 +1,20 @@
+#ifndef AETHER_HTTP_HTTPCONTEXT_H
+#define AETHER_HTTP_HTTPCONTEXT_H
 #pragma once
 #include <string_view>
 #include "HttpRequest.h"
 
 class Buffer;
 
-/// HttpContext: connection-level HTTP parsing state machine
+/// HttpContext: per-connection HTTP parsing state machine
 ///
-/// Handle sticky/half packets: buffer may contain incomplete or multiple requests
+/// Handles sticky/half packets: the buffer may hold partial or multiple requests
 ///
 /// State transitions:
 ///   ExpectRequestLine → ExpectHeaders → ExpectBody → GotComplete
 ///                                     → ExpectChunkSize → ExpectChunkData → ... → GotComplete
 ///
-/// Supports two Body transfer modes:
+/// Supports two body transfer modes:
 ///   1. Content-Length (fixed length)
 ///   2. Transfer-Encoding: chunked
 class HttpContext {
@@ -29,9 +31,9 @@ public:
 
     HttpContext() : state_(kExpectRequestLine), chunkSize_(0) {}
 
-    /// Parse HTTP request from Buffer
-    /// Successfully parsed portion auto-consumed (retrieved) from Buffer
-    /// Returns false on parse error, connection should be closed
+    /// Parse an HTTP request from the Buffer
+    /// Successfully parsed bytes are consumed from the Buffer (retrieve)
+    /// Returns false on parse error; the connection should be closed
     bool parseRequest(Buffer* buf);
 
     bool gotComplete() const { return state_ == kGotComplete; }
@@ -52,3 +54,4 @@ private:
     HttpRequest request_;
     size_t chunkSize_;
 };
+#endif // AETHER_HTTP_HTTPCONTEXT_H

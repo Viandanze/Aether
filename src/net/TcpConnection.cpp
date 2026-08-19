@@ -5,8 +5,11 @@
 #include "InetAddress.h"
 #include "base/Logger.h"
 #include <unistd.h>
-#include <errno.h>
+#include <fcntl.h>
+#include <cerrno>
 #include <cstring>
+#include <vector>
+#include <sys/sendfile.h>
 
 TcpConnection::TcpConnection(EventLoop* loop, const std::string& name, int fd,
                              const InetAddress& localAddr, const InetAddress& peerAddr)
@@ -34,13 +37,18 @@ void TcpConnection::connectEstablished() {
 }
 
 void TcpConnection::connectDestroyed() {
-    setState(kDisconnected);
-    channel_->disableAll();
-    if (connectionCallback_) connectionCallback_(shared_from_this());
+    // On the normal close path handleClose() has already fired connectionCallback_;
+    // this only covers connections destroyed without going through the close callback (e.g. still alive at server shutdown),
+    // the state check keeps the upper-layer callback from firing twice (duplicate logs / duplicate cleanup).
+    if (state_ == kConnected) {
+        setState(kDisconnected);
+        channel_->disableAll();
+        if (connectionCallback_) connectionCallback_(shared_from_this());
+    }
     channel_->remove();
 }
 
-// ─── Send ───
+// --- sending ---
 
 void TcpConnection::send(const std::string& message) {
     if (state_ == kConnected) {
@@ -78,7 +86,7 @@ void TcpConnection::sendInLoop(const char* data, size_t len) {
     ssize_t nwrote = 0;
     size_t remaining = len;
 
-    // If output buffer empty and not watching write events, try direct write
+    // if the output buffer is empty and no write event is pending, try writing directly
     if (!channel_->isWriting() && outputBuf_.readableBytes() == 0) {
         nwrote = ::write(channel_->fd(), data, len);
         if (nwrote >= 0) {
@@ -94,9 +102,9 @@ void TcpConnection::sendInLoop(const char* data, size_t len) {
         }
     }
 
-    // Put unwritten data in outputBuf_, continue when fd is writable
+    // whatever doesn't fit goes to outputBuf_ and is flushed when the fd is writable
     if (remaining > 0) {
-        // High water mark check
+        // high-water mark check
         size_t oldLen = outputBuf_.readableBytes();
         if (oldLen + remaining >= highWaterMark_
             && oldLen < highWaterMark_
@@ -113,7 +121,74 @@ void TcpConnection::sendInLoop(const char* data, size_t len) {
     }
 }
 
-// ─── Close ───
+// --- zero-copy file sending ---
+
+void TcpConnection::sendFile(int fileFd, off_t offset, size_t count) {
+    if (state_ == kConnected) {
+        if (loop_->isInLoopThread()) {
+            sendFileInLoop(fileFd, offset, count);
+        } else {
+            loop_->runInLoop([this, fileFd, offset, count]() {
+                sendFileInLoop(fileFd, offset, count);
+            });
+        }
+    } else {
+        ::close(fileFd);  // connection is no longer Connected; fd ownership ends here
+    }
+}
+
+// Fast path: while outputBuf_ is empty and no write event is pending, loop sendfile(2) so data stays in kernel space;
+// fallback: when sendfile hits EAGAIN (socket buffer full) or the header hasn't fully flushed,
+// pread the rest into outputBuf_ and continue via the normal write event, so the body strictly follows the header.
+// fd ownership ends inside this function: no member state, and a mid-transfer close can't leak the fd.
+void TcpConnection::sendFileInLoop(int fileFd, off_t offset, size_t count) {
+    const bool fastPath =
+        (outputBuf_.readableBytes() == 0 && !channel_->isWriting());
+
+    off_t off = offset;
+    size_t left = count;
+
+    if (fastPath) {
+        while (left > 0) {
+            size_t chunk = left > (1u << 20) ? (1u << 20) : left;  // 1MB per call
+            ssize_t n = ::sendfile(channel_->fd(), fileFd, &off, chunk);
+            if (n > 0) {
+                left -= static_cast<size_t>(n);
+                continue;
+            }
+            if (n < 0 && errno == EINTR) continue;
+            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;  // buffer full -> fall back
+            if (n == 0) {
+                // file shrank since stat (truncated mid-send): give up the rest, deliver a short response
+                LOG_WARN("TcpConnection::sendFileInLoop file truncated during send");
+                left = 0;
+                break;
+            }
+            // real error (connection dead, etc.): drop the rest, let handleClose finish up
+            LOG_ERROR("TcpConnection::sendFileInLoop sendfile error: %s", strerror(errno));
+            left = 0;
+            break;
+        }
+    }
+
+    if (left > 0) {
+        std::vector<char> tmp(left);
+        ssize_t n = ::pread(fileFd, tmp.data(), left, off);
+        if (n > 0) {
+            outputBuf_.append(tmp.data(), static_cast<size_t>(n));
+            channel_->enableWriting();
+        }
+        // n<=0: file deleted mid-send; deliver only what got out
+    }
+
+    ::close(fileFd);
+
+    // non-keep-alive ordering note: if the layer above then calls shutdown(), shutdownInLoop checks
+    // isWriting() -- in the fallback path write events are enabled, so we half-close after handleWrite drains;
+    // in the fast path everything is out, so shutdownWrite fires immediately. Nothing more to do here.
+}
+
+// --- closing ---
 
 void TcpConnection::shutdown() {
     if (state_ == kConnected) {
@@ -153,10 +228,10 @@ void TcpConnection::setTcpNoDelay(bool on) {
     socket_->setTcpNoDelay(on);
 }
 
-// ─── Event handlers ───
+// --- event handling ---
 
 void TcpConnection::handleRead() {
-    // ET mode must loop read until EAGAIN
+    // ET mode must read in a loop until EAGAIN
     int savedErrno = 0;
     ssize_t n = inputBuf_.readFd(channel_->fd(), &savedErrno);
 
@@ -164,7 +239,7 @@ void TcpConnection::handleRead() {
         if (messageCallback_) {
             messageCallback_(shared_from_this(), &inputBuf_);
         }
-        // Continue reading, ET mode may have more data
+        // keep reading; in ET mode there may be more data
         n = inputBuf_.readFd(channel_->fd(), &savedErrno);
     }
 
@@ -175,7 +250,7 @@ void TcpConnection::handleRead() {
             LOG_ERROR("TcpConnection::handleRead error: %s", strerror(savedErrno));
             handleError();
         }
-        // EAGAIN is normal exit in ET mode, not an error
+        // EAGAIN is the normal ET exit condition, not an error
     }
 }
 
@@ -205,7 +280,7 @@ void TcpConnection::handleClose() {
     setState(kDisconnected);
     channel_->disableAll();
 
-    // Notify upper layer of connection close
+    // notify the upper layer that the connection closed
     if (closeCallback_) closeCallback_(shared_from_this());
     if (connectionCallback_) connectionCallback_(shared_from_this());
 }

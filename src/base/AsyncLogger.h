@@ -1,3 +1,5 @@
+#ifndef AETHER_BASE_ASYNCLOGGER_H
+#define AETHER_BASE_ASYNCLOGGER_H
 #pragma once
 #include <string>
 #include <memory>
@@ -7,19 +9,20 @@
 #include <vector>
 #include <atomic>
 #include <fstream>
+#include <cstring>
 
-/// AsyncLogger: Async double-buffered logging system
+/// AsyncLogger: async double-buffered logging system
 ///
 /// Design:
-/// - Frontend (any thread): LOG_XXX macros -> format into FrontBuffer -> wake up backend thread
+/// - Frontend (any thread): LOG_XXX macro -> format into FrontBuffer -> wake backend thread
 /// - Backend (dedicated thread): every flushInterval seconds or when FrontBuffer is full,
-///   swap Front/Back Buffer, write Back to file
-/// - Double buffering ensures frontend writes don't block, backend file writes don't affect frontend
+///   swap Front/Back buffers and write Back to file
+/// - Double buffering keeps frontend writes non-blocking; file I/O never blocks the frontend
 ///
-/// Rotation strategy:
-/// - By size: rotate when file exceeds rollSize_
-/// - By date: auto-rotate to new file at midnight
-/// - Keep N old log files, auto-delete when exceeded
+/// Rollover policy:
+/// - By size: roll when the file exceeds rollSize_
+/// - By date: roll to a new file at midnight
+/// - Keep N old log files, delete older ones automatically
 class AsyncLogger {
 public:
     static const int kBufferSize = 4 * 1024 * 1024;  // 4MB
@@ -72,9 +75,9 @@ private:
     std::string logFile_;
     int flushInterval_;
     size_t rollSize_;
-    int keepFiles_;     // Keep N old log files
+    int keepFiles_;     // number of old log files to keep
     size_t writtenBytes_;
-    int lastDay_;       // Last roll date (tm_mday) for day-rollover detection
+    int lastDay_;       // day-of-month (tm_mday) of last rollover, for day-change detection
 
     std::unique_ptr<Buffer> frontBuf_;
     std::unique_ptr<Buffer> backBuf_;
@@ -87,3 +90,4 @@ private:
 
     std::ofstream fileStream_;
 };
+#endif // AETHER_BASE_ASYNCLOGGER_H

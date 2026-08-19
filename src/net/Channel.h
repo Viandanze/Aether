@@ -1,37 +1,41 @@
+#ifndef AETHER_NET_CHANNEL_H
+#define AETHER_NET_CHANNEL_H
 #pragma once
 #include <functional>
 #include <memory>
+#include "base/noncopyable.h"
 
 class EventLoop;
 
-// Channel: event dispatcher for fd
-// One Channel per fd (socket), handles epoll event registration and callbacks
+// Channel: event dispatcher for an fd
+// One Channel per fd (socket); registers epoll events and dispatches callbacks
 class Channel : noncopyable {
 public:
     using EventCallback = std::function<void()>;
     using ReadEventCallback = std::function<void()>;
 
-    // Channel state in epoller
+    // channel state in the epoller
     enum { kNew = -1, kAdded = 1, kDeleted = 2 };
 
     Channel(EventLoop* loop, int fd);
     ~Channel();
 
-    void handleEvent();  // Core method: dispatch based on revents
+    void handleEvent();  // core: dispatch callbacks based on revents_
 
-    // Set callbacks
+    // set callbacks
     void setReadCallback(ReadEventCallback cb) { readCallback_ = std::move(cb); }
     void setWriteCallback(EventCallback cb)    { writeCallback_ = std::move(cb); }
     void setCloseCallback(EventCallback cb)    { closeCallback_ = std::move(cb); }
     void setErrorCallback(EventCallback cb)    { errorCallback_ = std::move(cb); }
 
-    // Set interested events
+    // set events of interest
     void enableReading()  { events_ |= kReadEvent; update(); }
+    void disableReading() { events_ &= ~kReadEvent; update(); }
     void enableWriting()  { events_ |= kWriteEvent; update(); }
     void disableWriting() { events_ &= ~kWriteEvent; update(); }
     void disableAll()     { events_ = kNoneEvent; update(); }
 
-    // ET mode
+    // edge-triggered mode
     void enableET() { events_ |= kET; update(); }
 
     bool isNoneEvent() const { return events_ == kNoneEvent; }
@@ -44,7 +48,7 @@ public:
     void set_index(int idx) { index_ = idx; }
 
     EventLoop* ownerLoop() { return loop_; }
-    void remove();  // Remove self from EventLoop
+    void remove();  // remove self from the EventLoop
 
 private:
     void update();
@@ -56,12 +60,13 @@ private:
 
     EventLoop* loop_;
     const int fd_;
-    int events_;     // Registered events
-    int revents_;    // Ready events returned by epoll
-    int index_;      // State in epoller
+    int events_;     // registered events
+    int revents_;    // ready events returned by epoll
+    int index_;      // state in the epoller
 
     ReadEventCallback readCallback_;
     EventCallback writeCallback_;
     EventCallback closeCallback_;
     EventCallback errorCallback_;
 };
+#endif // AETHER_NET_CHANNEL_H

@@ -1,11 +1,13 @@
+#ifndef AETHER_BASE_TIMER_H
+#define AETHER_BASE_TIMER_H
 #pragma once
 #include <functional>
 #include <atomic>
 #include "TimeStamp.h"
 
 // Timer: timer abstraction
-// Holds callback, expiration, repeat flag, interval
-// Lifecycle managed by TimerQueue
+// Holds callback, expiration, repeat flag and interval
+// Lifetime managed by TimerQueue
 class Timer {
 public:
     using TimerCallback = std::function<void()>;
@@ -23,12 +25,12 @@ public:
     bool repeat() const { return repeat_; }
     int64_t sequence() const { return sequence_; }
 
-    // Restart repeating timer
+    // restart a repeating timer
     void restart(TimeStamp now) {
         if (repeat_) {
             expiration_ = TimeStamp::after(interval_ > 0 ? interval_ : 0.001);
         } else {
-            expiration_ = TimeStamp();  // Non-repeating, clear to empty
+            expiration_ = TimeStamp();  // one-shot: invalidate
         }
     }
 
@@ -43,3 +45,4 @@ private:
 
     static std::atomic<int64_t> s_numCreated_;
 };
+#endif // AETHER_BASE_TIMER_H

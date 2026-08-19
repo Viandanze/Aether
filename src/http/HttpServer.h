@@ -1,3 +1,5 @@
+#ifndef AETHER_HTTP_HTTPSERVER_H
+#define AETHER_HTTP_HTTPSERVER_H
 #pragma once
 #include <functional>
 #include <memory>
@@ -7,13 +9,13 @@
 #include "HttpRequest.h"
 #include "HttpResponse.h"
 
-/// HttpServer: HTTP server based on TcpServer
+/// HttpServer: HTTP server built on TcpServer
 ///
 /// Supports:
 /// - HTTP/1.1 Keep-Alive
-/// - HTTP Pipelining (multiple requests on same connection)
+/// - HTTP pipelining (multiple requests sent back-to-back on one connection)
 /// - Chunked Transfer-Encoding
-/// - Idle connection timeout (TimerWheel)
+/// - idle connection timeout (TimerWheel)
 class HttpServer {
 public:
     using HttpCallback = std::function<void(const HttpRequest&, HttpResponse*)>;
@@ -40,3 +42,4 @@ private:
     TcpServer server_;
     HttpCallback httpCallback_;
 };
+#endif // AETHER_HTTP_HTTPSERVER_H

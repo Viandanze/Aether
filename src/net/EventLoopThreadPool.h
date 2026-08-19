@@ -1,17 +1,20 @@
+#ifndef AETHER_NET_EVENTLOOPTHREADPOOL_H
+#define AETHER_NET_EVENTLOOPTHREADPOOL_H
 #pragma once
 #include <vector>
 #include <memory>
 #include <functional>
 #include <atomic>
+#include <string>
 #include "base/noncopyable.h"
 
 class EventLoop;
 class EventLoopThread;
 
-// EventLoopThreadPool: sub-Reactor thread pool for master-slave Reactor
-// mainReactor(Acceptor) accepts new connections -> round-robin to subReactor(IO threads)
-// setThreadNum(0) = single Reactor mode (main thread handles all IO)
-// setThreadNum(N) = 1 master + N slaves mode
+// EventLoopThreadPool: sub-reactor thread pool for the main/sub reactor model
+// mainReactor (Acceptor) takes new connections -> round-robin to subReactors (IO threads)
+// setThreadNum(0) = single-reactor mode (main thread does all IO)
+// setThreadNum(N) = 1 main + N sub reactors
 class EventLoopThreadPool : noncopyable {
 public:
     using ThreadInitCallback = std::function<void(EventLoop*)>;
@@ -24,24 +27,25 @@ public:
 
     void start(const ThreadInitCallback& cb = ThreadInitCallback());
 
-    // Round-Robin get next EventLoop (thread-safe)
-    // If pool not started, return baseLoop (single Reactor mode)
+    // round-robin the next EventLoop (thread-safe)
+    // if the pool isn't started, returns baseLoop (single-reactor mode)
     EventLoop* getNextLoop();
 
-    // Get all EventLoops (for timers and other traversal needs)
+    // all loops (for things like timers that need iteration)
     std::vector<EventLoop*> getAllLoops();
 
     bool started() const { return started_; }
     const std::string& name() const { return name_; }
 
 private:
-    EventLoop* baseLoop_;  // Main Reactor's EventLoop (thread where TcpServer lives)
+    EventLoop* baseLoop_;  // the main reactor's loop (the thread TcpServer lives in)
     std::string name_;
     bool started_;
     int numThreads_;
 
-    std::atomic_int next_;  // Round-Robin index
+    std::atomic_int next_;  // round-robin index
 
     std::vector<std::unique_ptr<EventLoopThread>> threads_;
-    std::vector<EventLoop*> loops_;  // Raw pointers to all sub-EventLoops
+    std::vector<EventLoop*> loops_;  // raw pointers to all sub loops
 };
+#endif // AETHER_NET_EVENTLOOPTHREADPOOL_H

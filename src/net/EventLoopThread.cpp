@@ -20,10 +20,10 @@ EventLoopThread::~EventLoopThread() {
 }
 
 EventLoop* EventLoopThread::startLoop() {
-    // Start thread, create EventLoop in thread function
+    // start the thread; the thread function creates the EventLoop
     thread_ = std::thread([this]() { threadFunc(); });
 
-    // Wait for EventLoop creation
+    // wait until the EventLoop exists
     {
         std::unique_lock<std::mutex> lock(mtx_);
         cond_.wait(lock, [this]() { return loop_ != nullptr; });
@@ -34,7 +34,7 @@ EventLoop* EventLoopThread::startLoop() {
 }
 
 void EventLoopThread::threadFunc() {
-    // Create EventLoop in IO thread (one loop per thread)
+    // create the EventLoop in the IO thread (one loop per thread)
     EventLoop loop;
 
     if (callback_) {
@@ -44,11 +44,11 @@ void EventLoopThread::threadFunc() {
     {
         std::lock_guard<std::mutex> lock(mtx_);
         loop_ = &loop;
-        cond_.notify_one();  // Notify main thread that EventLoop is created
+        cond_.notify_one();  // tell the main thread the loop exists
     }
 
-    loop.loop();  // Enter event loop (blocking)
+    loop.loop();  // enter the event loop (blocks)
 
-    // After loop exits
+    // after the loop exits
     loop_ = nullptr;
 }
