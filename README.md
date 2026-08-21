@@ -40,6 +40,7 @@ High-performance HTTP server built with C++17, featuring a master-slave Reactor 
 - **sendfile(2) Zero-Copy**: Large files (>4MB) streamed directly from page cache to socket via `sendfile(2)` — no user-space copy; fd lifetime scoped inside the send function (no member state, no leak on mid-transfer disconnect); EAGAIN fallback to `pread` + output buffer; HEAD requests report true Content-Length (RFC 9110)
 - **POST Support**: Request body parsing with Content-Length and chunked encoding
 - **Built-in API**: `/api/status` endpoint for server health checks
+- **Live Metrics**: `/api/stats` runtime endpoint — uptime, active connections, total request counter (atomic, all IO threads), FileCache hits/misses/bypass counters; consumed by `www/dashboard.html`, a zero-dependency oscilloscope-style live monitor (QPS chart, cache hit ring, connection stats)
 - **Thread-Safe**: Cross-thread task dispatch via `runInLoop()` + `eventfd` wakeup
 
 ## Build
@@ -67,6 +68,12 @@ make -j$(nproc)
 
 # Legacy positional args (backward compatible)
 ./aether 8080 4 ./public
+```
+
+Then open the live metrics dashboard (zero external dependencies, works offline):
+
+```
+http://localhost:8080/dashboard.html
 ```
 
 ### Command Line Options

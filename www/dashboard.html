@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether · Live Metrics</title>
+<style>
+:root {
+    --bg-0: #04060f;
+    --bg-1: #0a0e1e;
+    --panel: rgba(13, 17, 33, 0.72);
+    --panel-edge: rgba(167, 139, 250, 0.14);
+    --violet: #a78bfa;
+    --cyan: #22d3ee;
+    --green: #34d399;
+    --pink: #f472b6;
+    --text-0: #e6e8f2;
+    --text-1: #8b91ad;
+    --text-2: #565c77;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, 'SF Mono', Consolas, monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: var(--mono);
+    background: var(--bg-0);
+    color: var(--text-0);
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ── deep-space backdrop: nebula glows + dot grid ─────────────── */
+.backdrop { position: fixed; inset: 0; z-index: -2; background:
+    radial-gradient(1100px 520px at 12% -10%, rgba(88, 60, 180, 0.20), transparent 60%),
+    radial-gradient(900px 480px at 96% 8%, rgba(24, 150, 180, 0.13), transparent 55%),
+    radial-gradient(700px 700px at 50% 120%, rgba(88, 60, 180, 0.10), transparent 60%),
+    linear-gradient(180deg, var(--bg-0), var(--bg-1) 55%, var(--bg-0));
+}
+.dots { position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background-image: radial-gradient(rgba(167, 139, 250, 0.13) 1px, transparent 1px);
+    background-size: 26px 26px;
+    mask-image: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.18) 45%, rgba(0,0,0,.4));
+}
+/* slow horizon scan line */
+.scan { position: fixed; left: 0; right: 0; height: 1px; z-index: -1; pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.35), transparent);
+    animation: scan 9s linear infinite; }
+@keyframes scan { 0% { top: -2%; } 100% { top: 102%; } }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 26px 22px 40px; }
+
+/* ── header ───────────────────────────────────────────────────── */
+header { display: flex; align-items: center; gap: 18px; margin-bottom: 24px; flex-wrap: wrap; }
+.brand { display: flex; align-items: baseline; gap: 14px; }
+.brand .glyph {
+    font-size: 30px; font-weight: 800; line-height: 1;
+    background: linear-gradient(135deg, var(--violet), var(--cyan));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 14px rgba(167, 139, 250, 0.45));
+}
+.brand .name { font-size: 26px; letter-spacing: 0.42em; font-weight: 700; color: var(--text-0);
+    text-shadow: 0 0 24px rgba(34, 211, 238, 0.25); }
+.brand .sub { font-size: 11px; color: var(--text-2); letter-spacing: 0.28em; margin-top: 6px; }
+
+.pill { display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid rgba(52, 211, 153, 0.35); border-radius: 999px;
+    padding: 5px 14px; font-size: 11.5px; letter-spacing: 0.18em; color: var(--green);
+    background: rgba(52, 211, 153, 0.07); }
+.pill .led { width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 10px var(--green); animation: breathe 1.6s ease-in-out infinite; }
+.pill.bad { border-color: rgba(244, 114, 182, 0.4); color: var(--pink); background: rgba(244, 114, 182, 0.07); }
+.pill.bad .led { background: var(--pink); box-shadow: 0 0 10px var(--pink); animation: blink 0.7s steps(2) infinite; }
+@keyframes breathe { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes blink  { 0%,100% { opacity: 1; } 50%  { opacity: 0.1; } }
+
+.h-meta { margin-left: auto; display: flex; gap: 26px; font-size: 11.5px; color: var(--text-1); }
+.h-meta b { color: var(--text-0); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ── banner (errors / version hint) ───────────────────────────── */
+#banner { display: none; margin-bottom: 18px; padding: 10px 16px; border-radius: 10px;
+    border: 1px solid rgba(244, 114, 182, 0.35); background: rgba(244, 114, 182, 0.06);
+    color: var(--pink); font-size: 12.5px; letter-spacing: 0.04em; }
+#banner.show { display: block; }
+
+/* ── grid ─────────────────────────────────────────────────────── */
+.grid { display: grid; grid-template-columns: 1fr 320px; gap: 16px; }
+.grid-2 { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; margin-top: 16px; }
+@media (max-width: 900px) { .grid, .grid-2 { grid-template-columns: 1fr; } }
+
+.card { background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 14px;
+    padding: 18px 20px; position: relative; overflow: hidden;
+    backdrop-filter: blur(8px); box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38); }
+.card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(167,139,250,0.45), rgba(34,211,238,0.4), transparent); }
+.card .label { font-size: 10.5px; letter-spacing: 0.24em; color: var(--text-2);
+    text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+.card .label::after { content: ''; flex: 1; height: 1px;
+    background: linear-gradient(90deg, rgba(139,145,173,0.25), transparent); }
+
+/* QPS oscilloscope */
+.qps-now { display: flex; align-items: baseline; gap: 10px; margin: 10px 0 2px; }
+.qps-now .val { font-size: 44px; font-weight: 700; color: var(--cyan);
+    font-variant-numeric: tabular-nums; text-shadow: 0 0 26px rgba(34, 211, 238, 0.5);
+    transition: text-shadow 0.3s; }
+.qps-now .unit { font-size: 13px; color: var(--text-2); letter-spacing: 0.14em; }
+.qps-peak { font-size: 11.5px; color: var(--text-2); margin-bottom: 10px; }
+.qps-peak b { color: var(--violet); font-variant-numeric: tabular-nums; }
+#chart { width: 100%; height: 220px; display: block; border-radius: 8px;
+    background: rgba(4, 6, 15, 0.55); border: 1px solid rgba(139, 145, 173, 0.10); }
+
+/* right stack */
+.stack { display: grid; grid-template-rows: 1fr 1fr; gap: 16px; }
+.stat .val { font-size: 34px; font-weight: 700; margin-top: 8px;
+    font-variant-numeric: tabular-nums; transition: color 0.25s; }
+.stat .val small { font-size: 14px; color: var(--text-2); font-weight: 400; margin-left: 4px; }
+.stat .val.v-cyan { color: var(--cyan); text-shadow: 0 0 22px rgba(34, 211, 238, 0.4); }
+.stat .val.v-violet { color: var(--violet); text-shadow: 0 0 22px rgba(167, 139, 250, 0.4); }
+.stat .foot { font-size: 11px; color: var(--text-2); margin-top: 8px; letter-spacing: 0.05em; }
+
+/* FileCache */
+.fc-head { display: flex; align-items: center; gap: 20px; margin-top: 12px; flex-wrap: wrap; }
+.fc-rate { position: relative; width: 128px; height: 128px; flex: none; }
+.fc-rate svg { transform: rotate(-90deg); }
+.fc-rate .num { position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; }
+.fc-rate .num b { font-size: 26px; font-weight: 700; color: var(--green);
+    font-variant-numeric: tabular-nums; text-shadow: 0 0 18px rgba(52, 211, 153, 0.45); }
+.fc-rate .num span { font-size: 9.5px; color: var(--text-2); letter-spacing: 0.2em; margin-top: 3px; }
+.fc-kv { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 26px; flex: 1; min-width: 230px; }
+.kv { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.kv span { font-size: 11px; color: var(--text-2); letter-spacing: 0.06em; }
+.kv b { font-size: 14.5px; font-weight: 600; color: var(--text-0); font-variant-numeric: tabular-nums; }
+.kv b.hi { color: var(--green); } .kv b.mi { color: var(--pink); } .kv b.by { color: var(--cyan); }
+.fc-bar { margin-top: 14px; height: 5px; border-radius: 4px; overflow: hidden;
+    background: rgba(139, 145, 173, 0.12); }
+.fc-bar i { display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--violet), var(--cyan));
+    box-shadow: 0 0 12px rgba(34, 211, 238, 0.5); transition: width 0.5s ease; }
+.fc-cap { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text-2); margin-top: 6px; }
+
+/* architecture tags */
+.arch { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 9px; }
+.tag { font-size: 11px; letter-spacing: 0.05em; color: var(--text-1);
+    border: 1px solid rgba(139, 145, 173, 0.22); border-radius: 7px; padding: 6px 11px;
+    background: rgba(139, 145, 173, 0.05); transition: all 0.25s; }
+.tag:hover { color: var(--cyan); border-color: rgba(34, 211, 238, 0.45);
+    box-shadow: 0 0 14px rgba(34, 211, 238, 0.15); transform: translateY(-1px); }
+.arch-note { margin-top: 14px; font-size: 11.5px; color: var(--text-2); line-height: 1.75; }
+.arch-note em { color: var(--text-1); font-style: normal; }
+.arch-note code { color: var(--violet); background: rgba(167,139,250,0.08); padding: 1px 6px; border-radius: 4px; }
+
+footer { margin-top: 26px; text-align: center; font-size: 10.5px; color: var(--text-2);
+    letter-spacing: 0.14em; }
+footer b { background: linear-gradient(90deg, var(--violet), var(--cyan));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-weight: 700; }
+
+/* number flip on update */
+@keyframes tick { 0% { opacity: 1; } 40% { opacity: 0.45; } 100% { opacity: 1; } }
+.tick { animation: tick 0.35s ease; }
+</style>
+</head>
+<body>
+<div class="backdrop"></div><div class="dots"></div><div class="scan"></div>
+
+<div class="wrap">
+    <header>
+        <div class="brand">
+            <span class="glyph">Æ</span>
+            <div>
+                <div class="name">AETHER</div>
+                <div class="sub">HIGH-PERFORMANCE HTTP SERVER</div>
+            </div>
+        </div>
+        <div class="pill" id="statusPill"><span class="led"></span><span id="statusText">LIVE</span></div>
+        <div class="h-meta">
+            <div>VERSION <b id="mVersion">—</b></div>
+            <div>UPTIME <b id="mUptime">—</b></div>
+            <div>PROTO <b>HTTP/1.1</b></div>
+        </div>
+    </header>
+
+    <div id="banner"></div>
+
+    <div class="grid">
+        <div class="card">
+            <div class="label">Requests / second</div>
+            <div class="qps-now"><span class="val" id="qpsNow">0</span><span class="unit">QPS</span></div>
+            <div class="qps-peak">SESSION PEAK <b id="qpsPeak">0</b></div>
+            <canvas id="chart"></canvas>
+        </div>
+        <div class="stack">
+            <div class="card stat">
+                <div class="label">Active connections</div>
+                <div class="val v-cyan" id="conns">0</div>
+                <div class="foot" id="connFoot">timer-wheel guarded · idle timeout 30s</div>
+            </div>
+            <div class="card stat">
+                <div class="label">Requests served</div>
+                <div class="val v-violet" id="total">0</div>
+                <div class="foot">since process start · all IO threads</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid-2">
+        <div class="card">
+            <div class="label">FileCache · LRU in-memory</div>
+            <div class="fc-head">
+                <div class="fc-rate">
+                    <svg width="128" height="128" viewBox="0 0 128 128">
+                        <circle cx="64" cy="64" r="56" fill="none" stroke="rgba(139,145,173,0.13)" stroke-width="9"/>
+                        <circle id="ring" cx="64" cy="64" r="56" fill="none" stroke="#34d399" stroke-width="9"
+                                stroke-linecap="round" stroke-dasharray="351.86" stroke-dashoffset="351.86"
+                                style="filter: drop-shadow(0 0 8px rgba(52,211,153,0.55)); transition: stroke-dashoffset 0.6s ease;"/>
+                    </svg>
+                    <div class="num"><b id="hitRate">—</b><span>HIT RATE</span></div>
+                </div>
+                <div class="fc-kv">
+                    <div class="kv"><span>hits</span><b class="hi" id="fcHits">0</b></div>
+                    <div class="kv"><span>misses</span><b class="mi" id="fcMiss">0</b></div>
+                    <div class="kv"><span>bypassed &gt;4MB</span><b id="fcBy">0</b></div>
+                    <div class="kv"><span>cached files</span><b id="fcFiles">0</b></div>
+                    <div class="kv"><span>cached bytes</span><b class="by" id="fcBytes">0 B</b></div>
+                    <div class="kv"><span>eviction</span><b>LRU</b></div>
+                </div>
+            </div>
+            <div class="fc-bar"><i id="fcBar"></i></div>
+            <div class="fc-cap"><span>0</span><span id="fcCap">budget 64 MB</span></div>
+        </div>
+
+        <div class="card">
+            <div class="label">Architecture</div>
+            <div class="arch">
+                <span class="tag">Master-Slave Reactor</span>
+                <span class="tag">epoll ET</span>
+                <span class="tag">non-blocking IO</span>
+                <span class="tag">sendfile(2) zero-copy</span>
+                <span class="tag">TimerWheel O(1)</span>
+                <span class="tag">Keep-Alive</span>
+                <span class="tag">Pipelining</span>
+                <span class="tag">Chunked Encoding</span>
+                <span class="tag">ETag / 304</span>
+                <span class="tag">Async Logger</span>
+                <span class="tag">Graceful Shutdown</span>
+            </div>
+            <div class="arch-note">
+                Acceptor dispatches new connections round-robin to <em>N IO threads</em>;
+                each runs an <code>epoll</code> edge-triggered loop.
+                Hot files are served from the <em>LRU cache</em> (mtime+size validated);
+                files above 4&nbsp;MB bypass it and stream via <code>sendfile(2)</code> —
+                bytes never enter user space.
+            </div>
+        </div>
+    </div>
+
+    <footer>AETHER <b id="fVer">v1.1</b> · C++17 · benchmark: 516K QPS static / 672K QPS API / 5.12 GB/s large-file (16 vCPU)</footer>
+</div>
+
+<script>
+'use strict';
+const POLL_MS = 500;
+const MAX_POINTS = 240;                       // 2 min @ 500ms
+
+const $ = id => document.getElementById(id);
+const el = {
+    pill: $('statusPill'), pillText: $('statusText'), banner: $('banner'),
+    version: $('mVersion'), uptime: $('mUptime'),
+    qps: $('qpsNow'), peak: $('qpsPeak'), conns: $('conns'), total: $('total'),
+    hits: $('fcHits'), miss: $('fcMiss'), byp: $('fcBy'), files: $('fcFiles'),
+    bytes: $('fcBytes'), rate: $('hitRate'), ring: $('ring'), bar: $('fcBar'),
+};
+
+const state = { lastTotal: null, lastT: null, peak: 0, pts: [], fail: 0, sawStats: false };
+
+/* ── formatting helpers ─────────────────────────────────────── */
+function fmtNum(n) {
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    return String(n);
+}
+function fmtBytes(n) {
+    if (n >= 1 << 20) return (n / (1 << 20)).toFixed(2) + ' MB';
+    if (n >= 1 << 10) return (n / (1 << 10)).toFixed(1) + ' KB';
+    return n + ' B';
+}
+function fmtUp(s) {
+    s = Math.max(0, s | 0);
+    const d = s / 86400 | 0, h = (s % 86400) / 3600 | 0, m = (s % 3600) / 60 | 0, x = s % 60;
+    const p = v => String(v).padStart(2, '0');
+    return (d ? d + 'd ' : '') + p(h) + ':' + p(m) + ':' + p(x);
+}
+function setNum(node, v) {
+    const txt = fmtNum(v);
+    if (node.textContent !== txt) {
+        node.textContent = txt;
+        node.classList.remove('tick'); void node.offsetWidth; node.classList.add('tick');
+    }
+}
+
+/* ── oscilloscope canvas ────────────────────────────────────── */
+const cv = $('chart'), ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+    DPR = window.devicePixelRatio || 1;
+    W = cv.clientWidth; H = cv.clientHeight;
+    cv.width = W * DPR; cv.height = H * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize); resize();
+
+function draw() {
+    ctx.clearRect(0, 0, W, H);
+    const padL = 8, padR = 8, padT = 10, padB = 8;
+    const gw = W - padL - padR, gh = H - padT - padB;
+    const n = state.pts.length;
+    if (!n) return;
+
+    let max = Math.max.apply(null, state.pts);
+    if (max < 10) max = 10;                                   // sensible floor
+    max *= 1.15;
+
+    /* grid */
+    ctx.strokeStyle = 'rgba(139,145,173,0.09)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+        const y = padT + gh * i / 4;
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    }
+    for (let i = 0; i <= 6; i++) {
+        const x = padL + gw * i / 6;
+        ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke();
+    }
+    /* y-axis max label */
+    ctx.fillStyle = 'rgba(86,92,119,0.9)';
+    ctx.font = '10px ' + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = 'left';
+    ctx.fillText(fmtNum(Math.round(max)) + ' qps', padL + 4, padT + 11);
+
+    /* polyline */
+    const step = gw / (MAX_POINTS - 1);
+    const x0 = padL + gw - (n - 1) * step;                    // right-aligned: scrolls left
+    const pt = i => [x0 + i * step, padT + gh * (1 - Math.min(state.pts[i], max) / max)];
+
+    ctx.beginPath();
+    let [sx, sy] = pt(0); ctx.moveTo(sx, sy);
+    for (let i = 1; i < n; i++) { const [x, y] = pt(i); ctx.lineTo(x, y); }
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 1.8;
+    ctx.shadowColor = 'rgba(34,211,238,0.7)';
+    ctx.shadowBlur = 9;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    /* area fill */
+    const grad = ctx.createLinearGradient(0, padT, 0, padT + gh);
+    grad.addColorStop(0, 'rgba(34,211,238,0.22)');
+    grad.addColorStop(0.6, 'rgba(167,139,250,0.08)');
+    grad.addColorStop(1, 'rgba(167,139,250,0)');
+    ctx.lineTo(padL + gw, padT + gh); ctx.lineTo(x0, padT + gh); ctx.closePath();
+    ctx.fillStyle = grad; ctx.fill();
+
+    /* head pulse */
+    const [hx, hy] = pt(n - 1);
+    ctx.beginPath(); ctx.arc(hx, hy, 3.2, 0, Math.PI * 2);
+    ctx.fillStyle = '#e6e8f2'; ctx.fill();
+    ctx.beginPath(); ctx.arc(hx, hy, 7, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(34,211,238,0.55)'; ctx.lineWidth = 1.4; ctx.stroke();
+}
+
+/* ── polling loop ───────────────────────────────────────────── */
+function setLive(ok, msg) {
+    el.pill.classList.toggle('bad', !ok);
+    el.pillText.textContent = msg;
+    el.banner.classList.toggle('show', !ok);
+    if (!ok) el.banner.textContent = msg === 'OFFLINE' ? 'Stats endpoint unreachable — retrying every ' + POLL_MS + 'ms …' : msg;
+}
+function update(d) {
+    state.sawStats = true;
+    setLive(true, 'LIVE');
+
+    const now = performance.now();
+    let qps = 0;
+    if (state.lastTotal !== null) {
+        const dt = (now - state.lastT) / 1000;
+        if (dt > 0) qps = Math.max(0, (d.requests_total - state.lastTotal) / dt);
+    }
+    state.lastTotal = d.requests_total; state.lastT = now;
+
+    if (qps > state.peak) state.peak = qps;
+    state.pts.push(qps);
+    if (state.pts.length > MAX_POINTS) state.pts.shift();
+
+    setNum(el.qps, Math.round(qps));
+    el.peak.textContent = fmtNum(Math.round(state.peak));
+    setNum(el.conns, d.connections);
+    setNum(el.total, d.requests_total);
+    el.uptime.textContent = fmtUp(d.uptime_seconds);
+    if (el.version.textContent !== 'v' + d.version) el.version.textContent = 'v' + d.version;
+
+    const fc = d.file_cache;
+    setNum(el.hits, fc.hits); setNum(el.miss, fc.misses); setNum(el.byp, fc.bypassed);
+    setNum(el.files, fc.cached_files);
+    el.bytes.textContent = fmtBytes(fc.cached_bytes);
+    const r = fc.hit_rate;
+    el.rate.textContent = (r * 100).toFixed(1) + '%';
+    const C = 2 * Math.PI * 56;
+    el.ring.style.strokeDashoffset = C * (1 - r);
+    el.bar.style.width = Math.min(100, fc.cached_bytes / (64 * 1024 * 1024) * 100) + '%';
+    el.bytes.classList.remove('tick');
+
+    draw();
+}
+async function poll() {
+    try {
+        const res = await fetch('/api/stats', { cache: 'no-store' });
+        if (res.status === 404) {
+            setLive(false, 'This Aether build predates v1.1 — /api/stats is not served. Rebuild from the v1.1 tag.');
+            return;
+        }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        update(await res.json());
+        state.fail = 0;
+    } catch (e) {
+        if (state.sawStats && ++state.fail >= 2) setLive(false, 'OFFLINE');
+    }
+}
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
