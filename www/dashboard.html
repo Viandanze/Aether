@@ -174,7 +174,6 @@ footer b { background: linear-gradient(90deg, var(--violet), var(--cyan));
         </div>
         <div class="pill" id="statusPill"><span class="led"></span><span id="statusText">LIVE</span></div>
         <div class="h-meta">
-            <div>VERSION <b id="mVersion">—</b></div>
             <div>UPTIME <b id="mUptime">—</b></div>
             <div>PROTO <b>HTTP/1.1</b></div>
         </div>
@@ -254,7 +253,7 @@ footer b { background: linear-gradient(90deg, var(--violet), var(--cyan));
         </div>
     </div>
 
-    <footer>AETHER <b id="fVer">v1.1</b> · C++17 · benchmark: 516K QPS static / 672K QPS API / 5.12 GB/s large-file (16 vCPU)</footer>
+    <footer>AETHER · C++17 · benchmark: 516K QPS static / 672K QPS API / 5.12 GB/s large-file (16 vCPU)</footer>
 </div>
 
 <script>
@@ -265,7 +264,7 @@ const MAX_POINTS = 240;                       // 2 min @ 500ms
 const $ = id => document.getElementById(id);
 const el = {
     pill: $('statusPill'), pillText: $('statusText'), banner: $('banner'),
-    version: $('mVersion'), uptime: $('mUptime'),
+    uptime: $('mUptime'),
     qps: $('qpsNow'), peak: $('qpsPeak'), conns: $('conns'), total: $('total'),
     hits: $('fcHits'), miss: $('fcMiss'), byp: $('fcBy'), files: $('fcFiles'),
     bytes: $('fcBytes'), rate: $('hitRate'), ring: $('ring'), bar: $('fcBar'),
@@ -397,7 +396,6 @@ function update(d) {
     setNum(el.conns, d.connections);
     setNum(el.total, d.requests_total);
     el.uptime.textContent = fmtUp(d.uptime_seconds);
-    if (el.version.textContent !== 'v' + d.version) el.version.textContent = 'v' + d.version;
 
     const fc = d.file_cache;
     setNum(el.hits, fc.hits); setNum(el.miss, fc.misses); setNum(el.byp, fc.bypassed);
@@ -416,7 +414,7 @@ async function poll() {
     try {
         const res = await fetch('/api/stats', { cache: 'no-store' });
         if (res.status === 404) {
-            setLive(false, 'This Aether build predates v1.1 — /api/stats is not served. Rebuild from the v1.1 tag.');
+            setLive(false, 'This build does not serve /api/stats — rebuild from the latest source.');
             return;
         }
         if (!res.ok) throw new Error('HTTP ' + res.status);
