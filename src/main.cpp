@@ -14,12 +14,18 @@
 #include <sys/stat.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
+#include <chrono>
 
 // --- globals (for signal handling) ---
 EventLoop* g_loop = nullptr;
 HttpServer* g_server = nullptr;
 static int g_shutdownFd = -1;                    // SIGINT writes to this eventfd to wake the main loop
 static std::atomic<bool> g_shuttingDown{false};  // guards graceful shutdown against re-entry
+
+// --- runtime stats (atomics: onRequest runs concurrently on all IO threads) ---
+static const char* kVersion = "1.1";
+static std::atomic<uint64_t> g_totalRequests{0};
+static std::chrono::steady_clock::time_point g_startTime{std::chrono::steady_clock::now()};
 
 // --- graceful shutdown (runs in normal context on the main loop thread) ---
 static void startGracefulShutdown() {
@@ -105,6 +111,8 @@ bool isPathSafe(const std::string& path) {
 
 // --- HTTP request handling ---
 void onRequest(const HttpRequest& req, HttpResponse* resp) {
+    g_totalRequests.fetch_add(1, std::memory_order_relaxed);   // stats: count every request
+
     // only GET/HEAD/POST are supported
     auto method = req.method();
     if (method != HttpRequest::kGet &&
@@ -121,7 +129,39 @@ void onRequest(const HttpRequest& req, HttpResponse* resp) {
         resp->setStatusCode(HttpResponse::k200Ok);
         resp->setStatusMessage("OK");
         resp->setContentType("application/json; charset=utf-8");
-        resp->setBody("{\"status\":\"running\",\"version\":\"0.5\",\"protocol\":\"HTTP/1.1\"}");
+        resp->setBody(std::string("{\"status\":\"running\",\"version\":\"") + kVersion +
+                      "\",\"protocol\":\"HTTP/1.1\"}");
+        return;
+    }
+
+    // runtime stats endpoint (data source for www/dashboard.html)
+    if (path == "/api/stats") {
+        const auto uptime = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - g_startTime).count();
+        auto& fc  = FileCache::instance();
+        uint64_t hits = fc.hits(), misses = fc.misses(), bypass = fc.bypasses();
+        uint64_t lookups = hits + misses;                 // bypasses are streamed, not cached
+        double hitRate = lookups ? static_cast<double>(hits) / static_cast<double>(lookups) : 0.0;
+
+        char buf[512];
+        int n = std::snprintf(buf, sizeof(buf),
+            "{\"status\":\"running\",\"version\":\"%s\",\"protocol\":\"HTTP/1.1\","
+            "\"uptime_seconds\":%lld,\"requests_total\":%llu,\"connections\":%d,"
+            "\"file_cache\":{\"hits\":%llu,\"misses\":%llu,\"bypassed\":%llu,"
+            "\"hit_rate\":%.3f,\"cached_files\":%zu,\"cached_bytes\":%zu}}",
+            kVersion,
+            static_cast<long long>(uptime),
+            static_cast<unsigned long long>(g_totalRequests.load(std::memory_order_relaxed)),
+            g_server ? g_server->getTcpServer()->connectionCount() : 0,
+            static_cast<unsigned long long>(hits),
+            static_cast<unsigned long long>(misses),
+            static_cast<unsigned long long>(bypass),
+            hitRate, fc.cachedFiles(), fc.cachedBytes());
+
+        resp->setStatusCode(HttpResponse::k200Ok);
+        resp->setStatusMessage("OK");
+        resp->setContentType("application/json; charset=utf-8");
+        resp->setBody(std::string(buf, n > 0 ? n : 0));
         return;
     }
 
@@ -172,7 +212,7 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--async-log") {
             asyncLog = true;
         } else if (arg == "-h" || arg == "--help") {
-            printf("Aether HTTP Server v0.5\n");
+            printf("Aether HTTP Server v%s\n", kVersion);
             printf("Usage: %s [options]\n", argv[0]);
             printf("Options:\n");
             printf("  -p <port>      Listen port (default: 8080)\n");
@@ -205,7 +245,7 @@ int main(int argc, char* argv[]) {
     FileCache::instance().init(serveDir);
 
     LOG_INFO("════════════════════════════════════════════════");
-    LOG_INFO("  Aether HTTP Server v0.5");
+    LOG_INFO("  Aether HTTP Server v%s", kVersion);
     LOG_INFO("  Listening on 0.0.0.0:%d", port);
     LOG_INFO("  IO threads: %s", numThreads > 0 ? std::to_string(numThreads).c_str() : "1 (single Reactor)");
     LOG_INFO("  Max connections: %s", maxConn > 0 ? std::to_string(maxConn).c_str() : "unlimited");

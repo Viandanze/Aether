@@ -4,6 +4,7 @@
 #include <string>
 #include <mutex>
 #include <list>
+#include <atomic>
 #include <unordered_map>
 #include <fstream>
 #include <fcntl.h>
@@ -65,6 +66,7 @@ public:
         // large-file bypass: not cached. GET goes through zero-copy sendfile(2) (fd handed to the sender),
         // data never enters user space, saving the read-into-memory + write double copy
         if (static_cast<size_t>(st.st_size) > maxFileBytes_) {
+            bypasses_.fetch_add(1, std::memory_order_relaxed);   // large file: skips the cache
             serveLargeFile(filePath, st, req, resp, etag);
             return;
         }
@@ -95,6 +97,11 @@ public:
         std::lock_guard<std::mutex> lk(mtx_);
         return totalBytes_;
     }
+
+    // --- hit/miss statistics (read by /api/stats; relaxed: counters only, no ordering) ---
+    uint64_t hits()     const { return hits_.load(std::memory_order_relaxed); }
+    uint64_t misses()   const { return misses_.load(std::memory_order_relaxed); }
+    uint64_t bypasses() const { return bypasses_.load(std::memory_order_relaxed); }
 
 private:
     struct Entry {
@@ -180,6 +187,7 @@ private:
                 if (e.mtime == st.st_mtime && e.size == st.st_size) {
                     lru_.splice(lru_.begin(), lru_, e.lruIt);   // touch
                     body = e.body;
+                    hits_.fetch_add(1, std::memory_order_relaxed);
                     return true;
                 }
                 evict(it);   // file changed, the old entry is dead
@@ -187,6 +195,7 @@ private:
         }
 
         // -- slow path: read from disk outside the lock --
+        misses_.fetch_add(1, std::memory_order_relaxed);   // cache miss: disk read
         if (!readFile(filePath, body)) return false;
 
         if (cacheable) {
@@ -224,6 +233,11 @@ private:
     std::string serveDir_ = "./www";
     size_t maxTotalBytes_ = 64 * 1024 * 1024;
     size_t maxFileBytes_  = 4 * 1024 * 1024;
+
+    // statistics counters (atomics: serve() runs concurrently on all IO threads)
+    std::atomic<uint64_t> hits_{0};
+    std::atomic<uint64_t> misses_{0};
+    std::atomic<uint64_t> bypasses_{0};
 
     mutable std::mutex mtx_;
     std::unordered_map<std::string, Entry> map_;
