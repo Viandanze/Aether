@@ -21,8 +21,9 @@ bool HttpContext::parseRequest(Buffer* buf) {
             const char* crlf = std::search(searchStart, searchStart + searchLen,
                                            kCRLF, kCRLF + 2);
 
-            if (crlf == nullptr) {
-                break;  // incomplete line, wait for more data
+            if (crlf == searchStart + searchLen) {
+                break;  // no CRLF found (std::search returns `last`, not
+                        // nullptr) - incomplete line, wait for more data
             }
 
             size_t lineLen = static_cast<size_t>(crlf - (bufData + pos));
