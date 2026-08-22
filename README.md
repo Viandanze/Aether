@@ -181,3 +181,20 @@ covered md5 integrity, HEAD/304/404 semantics, keep-alive reuse across a
 sendfile transfer, Connection:close ordering, 4-way concurrent downloads, and
 mid-transfer client disconnect storms (EPIPE handled, zero fd leaks,
 114/114 connections cleaned up).
+
+Multi-core scaling (16 vCPU class host, wrk, same Release build):
+
+| Scenario (10s, keep-alive) | Throughput |
+|----------------------------|-----------:|
+| Static file GET `/` (1850B) | 516K QPS |
+| API `/api/status` | 672K QPS |
+| Large-file (sendfile path) | 5.12 GB/s |
+
+Numbers above the single-vCPU table are from a dedicated 16 vCPU host where
+server and load generator ran on separate cores; treat them as the scaling
+ceiling of the current reactor + FileCache design, while the single-vCPU
+figures remain the honest shared-core baseline.
+
+## License
+
+MIT License — see [LICENSE](LICENSE).
